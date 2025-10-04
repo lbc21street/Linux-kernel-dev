@@ -1,0 +1,8 @@
+# modules to be built
+obj-m := src/pwblkdev.o
+
+# object files for a module
+src/pwblkdev-y := src/init.o
+
+# object files for a module
+#pwblkdev-objs := src/init.o
