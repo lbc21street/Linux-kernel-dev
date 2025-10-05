@@ -1,8 +1,9 @@
+MODNAME := pwblkdev
 # modules to be built
-obj-m := src/pwblkdev.o
+obj-m := ${MODNAME}.o
 
 # object files for a module
-src/pwblkdev-y := src/init.o
+#${MODNAME}-y := src/devicesupport.o src/init.o src/iosupport.o src/queuesupport.o
 
 # object files for a module
-#pwblkdev-objs := src/init.o
+${MODNAME}-objs := src/devicesupport.o src/init.o src/iosupport.o src/queuesupport.o
