@@ -1,13 +1,12 @@
 //=================================================================================================
 //
-// \file    iosupport.h
+// \file    sysfssupport.h
 // \brief
 // \author  lbc21street
 //
 //=================================================================================================
 #pragma once
 
-#include "devicesupport.h"
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -16,11 +15,13 @@ extern "C" {
 //
 //
 
-//
-//
-//
+[[nodiscard]] int PwbdCreateClass(void);
 
-void PwbdpInitStaticDevOps(PPWBD_DEVICE Device);
+void PwbdDestroyClass(void);
+
+//
+//
+//
 
 #ifdef __cplusplus
 }

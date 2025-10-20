@@ -9,7 +9,7 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif  // __cplusplus
+#endif // __cplusplus
 
 //
 //
@@ -26,57 +26,59 @@ extern "C" {
 #define FALSE 0
 #endif // FALSE
 
-
 //
 //
 //
 
 #ifndef FlagOn
-#define FlagOn(f, m)                ((f) & (m))
-#endif  // FlagOn
+#define FlagOn(f, m) ((f) & (m))
+#endif // FlagOn
 
 #ifndef BooleanFlagOn
-#define BooleanFlagOn(f, m)         ((__u8)(((f) & (m)) != 0))
-#endif  // BooleanFlagOn
+#define BooleanFlagOn(f, m) ((__u8)(((f) & (m)) != 0))
+#endif // BooleanFlagOn
 
 #ifndef SetFlag
-#define SetFlag(f, m)               ((f) |= (m))
-#endif  // SetFlag
+#define SetFlag(f, m) ((f) |= (m))
+#endif // SetFlag
 
 #ifndef ClearFlag
-#define ClearFlag(f, m)             ((f) &= ~(m))
-#endif  // ClearFlag
+#define ClearFlag(f, m) ((f) &= ~(m))
+#endif // ClearFlag
 
 #ifndef FlagOnXact
-#define FlagOnXact(f, m, r)         (FlagOn((f), (m)) == (r))
-#endif  // FlagOnXact
+#define FlagOnXact(f, m, r) (FlagOn((f), (m)) == (r))
+#endif // FlagOnXact
 
 #ifndef FlagOnAll
-#define FlagOnAll(f, m)             (FlagOnXact((f), (m), (m)))
-#endif  // FlagOnAll
+#define FlagOnAll(f, m) (FlagOnXact((f), (m), (m)))
+#endif // FlagOnAll
 
 //
 //
 //
 
 #ifndef Add2Ptr
-#define Add2Ptr(ptr, inc)           ((void *)((unsigned char *)(ptr) + (inc)))
-#endif  // Add2Ptr
+#define Add2Ptr(ptr, inc) ((void *)((unsigned char *)(ptr) + (inc)))
+#endif // Add2Ptr
 
 #ifndef PtrOffset
-#define PtrOffset(base, off)        ((__u32)((uintptr_t)(off) - (ULONG_PTR)(base)))
-#endif  // PtrOffset
-
+#define PtrOffset(base, off) ((__u32)((uintptr_t)(off) - (ULONG_PTR)(base)))
+#endif // PtrOffset
 
 //
 //
 //
 
 #ifndef ARGUMENT_PRESENT
-#define ARGUMENT_PRESENT(ap) \
-    ((char *)((uintptr_t)(ap)) != (char *)(NULL))
-#endif  // ARGUMENT_PRESENT
+#define ARGUMENT_PRESENT(ap) ((char *)((uintptr_t)(ap)) != (char *)(NULL))
+#endif // ARGUMENT_PRESENT
 
+//
+//
+//
+
+#define TO_MB(x) (x * 1024 * 1024)
 
 //
 //
@@ -127,10 +129,8 @@ extern "C" {
 
 #pragma GCC diagnostic pop
 
-
-
 #ifdef __cplusplus
 }
-#endif  // __cplusplus
+#endif // __cplusplus
 
 //=================================================================================================

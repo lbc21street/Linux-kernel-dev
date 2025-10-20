@@ -3,7 +3,9 @@ MODNAME := pwblkdev
 obj-m := ${MODNAME}.o
 
 # object files for a module
-#${MODNAME}-y := src/devicesupport.o src/init.o src/iosupport.o src/queuesupport.o
+#${MODNAME}-y := src/devicesupport.o src/init.o src/iosupport.o src/queuesupport.o src/paramsupport.o src/sysfssupport.o
 
 # object files for a module
-${MODNAME}-objs := src/devicesupport.o src/init.o src/iosupport.o src/queuesupport.o
+${MODNAME}-objs := src/init.o src/devicesupport.o src/iosupport.o src/queuesupport.o src/paramsupport.o src/sysfssupport.o
+
+CFLAGS_MODULE += -DPWBD_USE_MQ

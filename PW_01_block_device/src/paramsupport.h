@@ -1,13 +1,12 @@
 //=================================================================================================
 //
-// \file    iosupport.h
+// \file    paramsupport.h
 // \brief
 // \author  lbc21street
 //
 //=================================================================================================
 #pragma once
 
-#include "devicesupport.h"
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -16,11 +15,14 @@ extern "C" {
 //
 //
 
-//
-//
-//
+extern __u8 devicecount;
+extern __u8 partitioncount;
+extern __u16 sectorsize;
+extern __u32 disksize;
 
-void PwbdpInitStaticDevOps(PPWBD_DEVICE Device);
+//
+//
+//
 
 #ifdef __cplusplus
 }

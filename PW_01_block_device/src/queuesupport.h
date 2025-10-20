@@ -7,30 +7,32 @@
 //=================================================================================================
 #pragma once
 
+#include "devicesupport.h"
+
 #ifdef __cplusplus
 extern "C" {
-#endif  // __cplusplus
+#endif // __cplusplus
 
 //
 //
 //
 
+#define PWBD_DEFAULT_QUEUE_DEPTH 128
 
 //
 //
 //
 
-int PwbdpAllocateTagSet(void);
+[[nodiscard]] int PwbdpAllocateTagSet(PPWBD_DEVICE Device);
 
-void PwbdpFreeTagSet(void);
+void PwbdpFreeTagSet(PPWBD_DEVICE Device);
 
-void PwbdpInitStaticTagSet(void);
+void PwbdpInitStaticTagSet(PPWBD_DEVICE Device);
 
-void PwbdpInitStaticMqOps(void);
-
+void PwbdpInitStaticMqOps(PPWBD_DEVICE Device);
 
 #ifdef __cplusplus
 }
-#endif  // __cplusplus
+#endif // __cplusplus
 
 //=================================================================================================
