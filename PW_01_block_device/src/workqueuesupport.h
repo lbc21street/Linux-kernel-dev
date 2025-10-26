@@ -1,6 +1,6 @@
 //=================================================================================================
 //
-// \file    queuesupport.h
+// \file    workqueuesupport.h
 // \brief
 // \author  lbc21street
 //
@@ -8,6 +8,8 @@
 #pragma once
 
 #include "devicesupport.h"
+#include <linux/blk-mq.h>
+#include <linux/workqueue.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,19 +21,21 @@ extern "C" {
 //
 //
 
-#define PWBD_DEFAULT_QUEUE_DEPTH 128
+typedef struct _PWBD_REQUEST_DATA {
+
+    struct work_struct WorkItem;
+
+} PWBD_REQUEST_DATA, *PPWBD_REQUEST_DATA;
 
 //
 //
 //
 
-[[nodiscard]] int PwbdpAllocateTagSet(PPWBD_DEVICE Device);
+[[nodiscard]] int PwbdpAllocateWorkQueue(PPWBD_DEVICE Device);
 
-void PwbdpFreeTagSet(PPWBD_DEVICE Device);
+void PwbdpDestroyWorkQueue(PPWBD_DEVICE Device);
 
-void PwbdpInitStaticTagSet(PPWBD_DEVICE Device);
-
-void PwbdpInitStaticMqOps(PPWBD_DEVICE Device);
+bool PwbdpQueueWorkItem(struct request *Request);
 
 #endif // PWBD_USE_MQ
 

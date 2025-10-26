@@ -41,6 +41,29 @@ PWBD_CTRL PwbdCtrl;
 //
 //
 
+static void PwbdpCaptureDeviceParameters(void)
+{
+    // SetFlag(PwbdCtrl.Flags, PWBD_CTLFL_PARAMETERS_CAPTURED);
+    atomic_or(PWBD_CTLFL_PARAMETERS_CAPTURED, (atomic_t *)&PwbdCtrl.Flags);
+
+    //
+    // capture sysfs module parameters
+    //
+
+    PwbdCtrl.NumberOfDevices = devicecount;
+    PwbdCtrl.NumberOfPartitions = partitioncount;
+    PwbdCtrl.SectorSize = sectorsize;
+    PwbdCtrl.DiskSize = MB_TO_BYTES(disksize + PWBD_RESERVED_DISK_SIZE_MB);
+
+    pr_info("captured NumberOfDevices %u NumberOfPartitions %u SectorSize %u DiskSize %llu",
+            PwbdCtrl.NumberOfDevices, PwbdCtrl.NumberOfPartitions, PwbdCtrl.SectorSize,
+            PwbdCtrl.DiskSize);
+}
+
+//
+//
+//
+
 static void PwbdpTeardown(void)
 {
     PwbdRemoveDevices();
@@ -59,17 +82,11 @@ static int __init PwbdInit(void)
     pr_info("entering");
 
     do {
-        // SetFlag(PwbdCtrl.Flags, PWBD_CTLFL_PARAMETERS_CAPTURED);
-        raw_atomic_or(PWBD_CTLFL_PARAMETERS_CAPTURED, (atomic_t *)&PwbdCtrl.Flags);
-
         //
         // capture sysfs module parameters
         //
 
-        PwbdCtrl.NumberOfDevices = devicecount;
-        PwbdCtrl.NumberOfPartitions = partitioncount;
-        PwbdCtrl.SectorSize = sectorsize;
-        PwbdCtrl.DiskSize = TO_MB(disksize);
+        PwbdpCaptureDeviceParameters();
 
         result = PwbdCreateClass();
 

@@ -121,9 +121,9 @@ static int PwbdSetDeviceCount(const char *Value, const struct kernel_param *Kern
         return result;
     }
 
-    uint8_t deviceCount = 0;
+    uint8_t numberDevices = 0;
 
-    result = kstrtou8(Value, 10, &deviceCount);
+    result = kstrtou8(Value, 10, &numberDevices);
 
     if (result != 0) {
         pr_err("kstrtou8() failed %d", result);
@@ -131,15 +131,17 @@ static int PwbdSetDeviceCount(const char *Value, const struct kernel_param *Kern
         return result;
     }
 
-    pr_info("got device count %u", deviceCount);
+    pr_info("got device count %u", numberDevices);
 
-    if ((deviceCount < 1) || (deviceCount > PWBD_MAX_NUMBER_OF_DEVICES)) {
-        pr_err("invalid number of devices %u specified\n", deviceCount);
+    if ((numberDevices < 1) || (numberDevices > PWBD_MAX_NUMBER_OF_DEVICES)) {
+        pr_err("invalid number of devices %u specified\n", numberDevices);
 
         return -EINVAL;
     }
 
-    return param_set_byte(Value, KernelParam);
+    devicecount = numberDevices;
+
+    return 0;
 }
 
 //
@@ -158,9 +160,9 @@ static int PwbdSetPartitionCount(const char *Value, const struct kernel_param *K
         return result;
     }
 
-    uint8_t partitionCount = 0;
+    uint8_t numberPartitions = 0;
 
-    result = kstrtou8(Value, 10, &partitionCount);
+    result = kstrtou8(Value, 10, &numberPartitions);
 
     if (result != 0) {
         pr_err("kstrtou8() failed %d", result);
@@ -168,15 +170,17 @@ static int PwbdSetPartitionCount(const char *Value, const struct kernel_param *K
         return result;
     }
 
-    pr_info("got partition count %u", partitionCount);
+    pr_info("got partition count %u", numberPartitions);
 
-    if ((partitionCount < 1) || (partitionCount > PWBD_MAX_NUMBER_OF_PARTITIONS)) {
-        pr_err("invalid number of partitions specified (%u)\n", partitionCount);
+    if ((numberPartitions < 1) || (numberPartitions > PWBD_MAX_NUMBER_OF_PARTITIONS)) {
+        pr_err("invalid number of partitions specified (%u)\n", numberPartitions);
 
         return -EINVAL;
     }
 
-    return param_set_byte(Value, KernelParam);
+    partitioncount = numberPartitions;
+
+    return 0;
 }
 
 //
@@ -195,9 +199,9 @@ static int PwbdSetSectorSize(const char *Value, const struct kernel_param *Kerne
         return result;
     }
 
-    uint16_t sectorSize = 0;
+    uint16_t rawSectorSize = 0;
 
-    result = kstrtou16(Value, 10, &sectorSize);
+    result = kstrtou16(Value, 10, &rawSectorSize);
 
     if (result != 0) {
         pr_err("kstrtou16() failed %d", result);
@@ -205,17 +209,19 @@ static int PwbdSetSectorSize(const char *Value, const struct kernel_param *Kerne
         return result;
     }
 
-    uint16_t roundedSectorSize = (uint16_t)rounddown_pow_of_two(sectorSize);
+    uint16_t roundedSectorSize = (uint16_t)rounddown_pow_of_two(rawSectorSize);
 
-    pr_info("got sector size %u, rounded down to %u", sectorSize, roundedSectorSize);
+    pr_info("got sector size %u, rounded down to %u", rawSectorSize, roundedSectorSize);
 
     if ((roundedSectorSize < PWBD_MIN_SECTOR_SIZE) || (roundedSectorSize > PWBD_MAX_SECTOR_SIZE)) {
-        pr_err("invalid sector size specified %u (%u)\n", roundedSectorSize, sectorSize);
+        pr_err("invalid sector size specified %u (%u)\n", roundedSectorSize, rawSectorSize);
 
         return -EINVAL;
     }
 
-    return param_set_ushort(Value, KernelParam);
+    sectorsize = roundedSectorSize;
+
+    return 0;
 }
 
 //
@@ -234,9 +240,9 @@ static int PwbdSetDiskSize(const char *Value, const struct kernel_param *KernelP
         return result;
     }
 
-    uint32_t diskSize = 0;
+    uint32_t diskSizeInMb = 0;
 
-    result = kstrtou32(Value, 10, &diskSize);
+    result = kstrtou32(Value, 10, &diskSizeInMb);
 
     if (result != 0) {
         pr_err("kstrtou32() failed %d", result);
@@ -244,15 +250,17 @@ static int PwbdSetDiskSize(const char *Value, const struct kernel_param *KernelP
         return result;
     }
 
-    pr_info("got disk size %u MB", diskSize);
+    pr_info("got disk size %u MB", diskSizeInMb);
 
-    if ((diskSize < PWBD_MIN_DISK_SIZE_MB) || (diskSize > PWBD_MAX_DISK_SIZE_MB)) {
-        pr_err("invalid disk size specified %u\n", diskSize);
+    if ((diskSizeInMb < PWBD_MIN_DISK_SIZE_MB) || (diskSizeInMb > PWBD_MAX_DISK_SIZE_MB)) {
+        pr_err("invalid disk size specified %u\n", diskSizeInMb);
 
         return -EINVAL;
     }
 
-    return param_set_ushort(Value, KernelParam);
+    disksize = diskSizeInMb;
+
+    return 0;
 }
 
 //=================================================================================================

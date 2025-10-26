@@ -24,6 +24,32 @@ extern "C" {
 //
 
 //
+//
+//
+
+#ifdef PWBD_DETAILED_TRACE
+
+#define pr_emerg_detailed(...) pr_emerg(__VA_ARGS__)
+#define pr_alert_detailed(...) pr_alert(__VA_ARGS__)
+#define pr_crit_detailed(...) pr_crit(__VA_ARGS__)
+#define pr_err_detailed(...) pr_err(__VA_ARGS__)
+#define pr_warn_detailed(...) pr_warn(__VA_ARGS__)
+#define pr_notice_detailed(...) pr_notice(__VA_ARGS__)
+#define pr_info_detailed(...) pr_info(__VA_ARGS__)
+
+#else // PWBD_DETAILED_TRACE
+
+#define pr_emerg_detailed(...)
+#define pr_alert_detailed(...)
+#define pr_crit_detailed(...)
+#define pr_err_detailed(...)
+#define pr_warn_detailed(...)
+#define pr_notice_detailed(...)
+#define pr_info_detailed(...)
+
+#endif // PWBD_DETAILED_TRACE
+
+//
 // [NOTE]
 //
 // routines and other stuff of interest

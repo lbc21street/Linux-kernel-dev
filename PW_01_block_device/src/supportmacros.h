@@ -78,7 +78,7 @@ extern "C" {
 //
 //
 
-#define TO_MB(x) (x * 1024 * 1024)
+#define MB_TO_BYTES(x) ((x) * 1024 * 1024)
 
 //
 //

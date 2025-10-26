@@ -8,6 +8,8 @@
 
 #define pr_fmt(fmt) "[" KBUILD_MODNAME "] %s(): " fmt "\n", __func__
 
+#define PWBD_USE_MQ
+
 #include <linux/ctype.h>
 #include <linux/kernel.h>
 
@@ -16,6 +18,7 @@
 #include <linux/cdrom.h>
 #include <linux/fd.h>
 #include <linux/hdreg.h>
+#include <linux/preempt.h>
 
 #include "data.h"
 #include "devicesupport.h"
@@ -39,7 +42,7 @@ static int PwbdpWriteToDevice(PPWBD_DEVICE Device, const void *Data, size_t Data
     int result = 0;
 
     pr_info("Data 0x%px DataLength %lu Sector %llu device 0x%px (%u)", Data, DataLength, Sector,
-            Device, Device->Minor);
+            Device, Device->DeviceNumber);
 
     uint32_t offset = (Sector & (Device->SectorsPerPage - 1)) << Device->SectorShift;
 
@@ -71,7 +74,7 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
     int result = 0;
 
     pr_info("Data 0x%px DataLength %lu Sector %llu device 0x%px (%u)", Data, DataLength, Sector,
-            Device, Device->Minor);
+            Device, Device->DeviceNumber);
 
     uint32_t offset = (Sector & (Device->SectorsPerPage - 1)) << Device->SectorShift;
 
@@ -106,9 +109,11 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
 
     address = kmap_local_page(Page);
 
-    pr_info(
-        "Page 0x%px Length %u Offset %u OpFlags 0x%08X Sector %llu address 0x%px device 0x%px (%u)",
-        Page, Length, Offset, OpFlags, Sector, address, Device, Device->Minor);
+    pr_info_detailed(
+        "Page 0x%px Length %u Offset %u OpFlags 0x%08X Sector %llu address 0x%px device 0x%px "
+        "(%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
+        Page, Length, Offset, OpFlags, Sector, address, Device, Device->DeviceNumber, preemptible(),
+        in_atomic(), in_task(), in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
 
     if (op_is_write(OpFlags)) {
         flush_dcache_page(Page);
@@ -127,6 +132,8 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
     return result;
 }
 
+#ifndef PWBD_USE_MQ
+
 //
 //
 //
@@ -136,7 +143,7 @@ static void PwbdpDevOpsSubmitBio(struct bio *Bio)
     PPWBD_DEVICE device = (PPWBD_DEVICE)Bio->bi_bdev->bd_disk->private_data;
 
     // pr_info("Bio 0x%px bi_bdev 0x%px bd_disk 0x%px sector %llu device 0x%px (%u)", Bio,
-    //         Bio->bi_bdev, Bio->bi_bdev->bd_disk, sector, device, device->Minor);
+    //         Bio->bi_bdev, Bio->bi_bdev->bd_disk, sector, device, device->DeviceNumber);
 
     //
     // [NOTE]
@@ -207,17 +214,19 @@ static void PwbdpDevOpsSubmitBio(struct bio *Bio)
     }
 
     else if (FlagOn(Bio->bi_opf, REQ_NOWAIT)) {
-        pr_err("calling bio_wouldblock_error() device 0x%px (%u)", device, device->Minor);
+        pr_err("calling bio_wouldblock_error() device 0x%px (%u)", device, device->DeviceNumber);
 
         bio_wouldblock_error(Bio);
     }
 
     else {
-        pr_err("calling bio_io_error() device 0x%px (%u)", device, device->Minor);
+        pr_err("calling bio_io_error() device 0x%px (%u)", device, device->DeviceNumber);
 
         bio_io_error(Bio);
     }
 }
+
+#endif // PWBD_USE_MQ
 
 //
 //
@@ -227,7 +236,7 @@ static int PwbdpDevOpsOpen(struct gendisk *Disk, blk_mode_t Mode)
 {
     PPWBD_DEVICE device = (PPWBD_DEVICE)Disk->private_data;
 
-    pr_info("Disk 0x%px Mode %u device 0x%px (%u)", Disk, Mode, device, device->Minor);
+    pr_info("Disk 0x%px Mode %u device 0x%px (%u)", Disk, Mode, device, device->DeviceNumber);
 
     return 0;
 }
@@ -240,7 +249,7 @@ static void PwbdpDevOpsRelease(struct gendisk *Disk)
 {
     PPWBD_DEVICE device = (PPWBD_DEVICE)Disk->private_data;
 
-    pr_info("Disk 0x%px device 0x%px (%u)", Disk, device, device->Minor);
+    pr_info("Disk 0x%px device 0x%px (%u)", Disk, device, device->DeviceNumber);
 }
 
 //
@@ -253,7 +262,7 @@ static int PwbdpDevOpsIoctl(struct block_device *Bdev, blk_mode_t Mode, unsigned
     PPWBD_DEVICE device = (PPWBD_DEVICE)Bdev->bd_disk->private_data;
 
     pr_info("Bdev 0x%px Mode %u Cmd 0x%08X Arg 0x%lX device 0x%px (%u)", Bdev, Mode, Cmd, Arg,
-            device, device->Minor);
+            device, device->DeviceNumber);
 
     int result = 0;
 
@@ -343,7 +352,7 @@ static int PwbdpDevOpsGetGeo(struct block_device *Bdev, struct hd_geometry *Geo)
 {
     PPWBD_DEVICE device = (PPWBD_DEVICE)Bdev->bd_disk->private_data;
 
-    pr_info("Bdev 0x%px Geo 0x%px device 0x%px (%u)", Bdev, Geo, device, device->Minor);
+    pr_info("Bdev 0x%px Geo 0x%px device 0x%px (%u)", Bdev, Geo, device, device->DeviceNumber);
 
     Geo->start = 0;
 
@@ -371,7 +380,7 @@ static int PwbdpDevOpsGetGeo(struct block_device *Bdev, struct hd_geometry *Geo)
     }
 
     pr_info("heads %u cylinders %u sectors %u start %lu device 0x%px (%u)", Geo->heads,
-            Geo->cylinders, Geo->sectors, Geo->start, device, device->Minor);
+            Geo->cylinders, Geo->sectors, Geo->start, device, device->DeviceNumber);
 
     return 0;
 }
@@ -384,7 +393,7 @@ static int PwbdpDevOpsSetReadOnly(struct block_device *Bdev, bool Ro)
 {
     PPWBD_DEVICE device = (PPWBD_DEVICE)Bdev->bd_disk->private_data;
 
-    pr_info("Bdev 0x%px Ro %u device 0x%px (%u)", Bdev, Ro, device, device->Minor);
+    pr_info("Bdev 0x%px Ro %u device 0x%px (%u)", Bdev, Ro, device, device->DeviceNumber);
 
     return -EINVAL;
 }
@@ -397,7 +406,7 @@ static void PwbdpDevOpsFreeDisk(struct gendisk *Disk)
 {
     PPWBD_DEVICE device = (PPWBD_DEVICE)Disk->private_data;
 
-    pr_info("Disk 0x%px device 0x%px (%u)", Disk, device, device->Minor);
+    pr_info("Disk 0x%px device 0x%px (%u)", Disk, device, device->DeviceNumber);
 }
 
 //
@@ -408,7 +417,7 @@ static int PwbdpDevOpsGetUniqueId(struct gendisk *Disk, u8 Id[16], enum blk_uniq
 {
     PPWBD_DEVICE device = (PPWBD_DEVICE)Disk->private_data;
 
-    pr_info("Disk 0x%px id_type %u device 0x%px (%u)", Disk, IdType, device, device->Minor);
+    pr_info("Disk 0x%px id_type %u device 0x%px (%u)", Disk, IdType, device, device->DeviceNumber);
 
     return -EINVAL;
 }
@@ -419,7 +428,9 @@ static int PwbdpDevOpsGetUniqueId(struct gendisk *Disk, u8 Id[16], enum blk_uniq
 
 void PwbdpInitStaticDevOps(PPWBD_DEVICE Device)
 {
+#ifndef PWBD_USE_MQ
     PwbdCtrl.DevOps.submit_bio = PwbdpDevOpsSubmitBio;
+#endif // PWBD_USE_MQ
     PwbdCtrl.DevOps.open = PwbdpDevOpsOpen;
     PwbdCtrl.DevOps.release = PwbdpDevOpsRelease;
     PwbdCtrl.DevOps.ioctl = PwbdpDevOpsIoctl;

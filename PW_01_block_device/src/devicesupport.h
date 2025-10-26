@@ -9,6 +9,7 @@
 
 #include <linux/blk-mq.h>
 #include <linux/types.h>
+#include <linux/workqueue.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,33 +52,32 @@ extern "C" {
 //
 
 #define PWBD_RESERVED_DISK_SIZE_MB 4
-#define PWBD_RESERVED_DISK_SIZE TO_MB(PWBD_RESERVED_DISK_SIZE_MB)
+#define PWBD_RESERVED_DISK_SIZE MB_TO_BYTES(PWBD_RESERVED_DISK_SIZE_MB)
 
 //
 // min disk size (in bytes)
 //
 
-#define PWBD_MIN_DISK_SIZE_MB (10 + PWBD_RESERVED_DISK_SIZE_MB)
-#define PWBD_MIN_DISK_SIZE TO_MB(PWBD_MIN_DISK_SIZE_MB)
+#define PWBD_MIN_DISK_SIZE_MB 10
+#define PWBD_MIN_DISK_SIZE MB_TO_BYTES(PWBD_MIN_DISK_SIZE_MB)
 
 //
 // max disk size (in bytes)
 //
 
-#define PWBD_MAX_DISK_SIZE_MB (1024 + PWBD_RESERVED_DISK_SIZE_MB)
-#define PWBD_MAX_DISK_SIZE TO_MB(PWBD_MAX_DISK_SIZE_MB)
+#define PWBD_MAX_DISK_SIZE_MB 1024
+#define PWBD_MAX_DISK_SIZE MB_TO_BYTES(PWBD_MAX_DISK_SIZE_MB)
 
 //
 //
 //
 
 #define PWBD_DEFAULT_PARTITION_SIZE_MB 100
-#define PWBD_DEFAULT_PARTITION_SIZE TO_MB(PWBD_DEFAULT_PARTITION_SIZE_MB)
+#define PWBD_DEFAULT_PARTITION_SIZE MB_TO_BYTES(PWBD_DEFAULT_PARTITION_SIZE_MB)
 
 #define PWBD_DEFAULT_DISK_SIZE_MB                                                                  \
-    (PWBD_DEFAULT_NUMBER_OF_PARTITIONS * PWBD_DEFAULT_PARTITION_SIZE_MB +                          \
-     PWBD_RESERVED_DISK_SIZE_MB)
-#define PWBD_DEFAULT_DISK_SIZE TO_MB(PWBD_DEFAULT_DISK_SIZE_MB)
+    (PWBD_DEFAULT_NUMBER_OF_PARTITIONS * PWBD_DEFAULT_PARTITION_SIZE_MB)
+#define PWBD_DEFAULT_DISK_SIZE MB_TO_BYTES(PWBD_DEFAULT_DISK_SIZE_MB)
 
 #define PWBD_DEFAULT_NUMBER_OF_SECTORS (PWBD_DEFAULT_DISK_SIZE >> PWBD_DEFAULT_SECTOR_SHIFT)
 static_assert(PWBD_DEFAULT_SECTOR_SHIFT <= PAGE_SHIFT);
@@ -123,12 +123,14 @@ typedef struct _PWBD_DEVICE {
     uint32_t SectorsPerPage;
     uint64_t DiskSize; // in bytes
 
-    uint32_t Minor;
+    uint32_t DeviceNumber;
 
     sector_t Capacity; // uint64_t, in sectors
 
 #ifdef PWBD_USE_MQ
     struct blk_mq_tag_set TagSet;
+
+    struct workqueue_struct *WorkQueue;
 #endif // PWBD_USE_MQ
 
     void *DiskData;
