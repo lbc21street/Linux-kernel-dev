@@ -25,6 +25,8 @@ typedef struct _PWBD_REQUEST_DATA {
 
     struct work_struct WorkItem;
 
+    int Result;
+
 } PWBD_REQUEST_DATA, *PPWBD_REQUEST_DATA;
 
 //

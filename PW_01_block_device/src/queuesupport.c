@@ -96,12 +96,11 @@ static blk_status_t PwbdpQueueRequest(struct blk_mq_hw_ctx *Context,
 
     unsigned long length = blk_rq_cur_bytes(request);
 
-    pr_info(
-        "Context 0x%px Data 0x%px request 0x%px start 0x%lX length %lu device 0x%px (%u) [P %u A "
-        "%u T %u SS %lu S "
-        "%lu H %lu I %u]",
-        Context, Data, request, start, length, device, device->DeviceNumber, preemptible(),
-        in_atomic(), in_task(), in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
+    pr_info_detailed("Context 0x%px Data 0x%px request 0x%px sync %u start 0x%lX length %lu device "
+                     "0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
+                     Context, Data, request, rq_is_sync(request), start, length, device,
+                     device->DeviceNumber, preemptible(), in_atomic(), in_task(),
+                     in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
 
     blk_mq_start_request(request);
 
@@ -121,14 +120,18 @@ static void PwbdpCompleteRequest(struct request *Request)
     PPWBD_DEVICE device = Request->q->queuedata;
     PPWBD_REQUEST_DATA data = blk_mq_rq_to_pdu(Request);
 
-    pr_info("Request 0x%px data 0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
-            Request, data, device, device->DeviceNumber, preemptible(), in_atomic(), in_task(),
-            in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
+    pr_info_detailed("Request 0x%px data 0x%px Result %d device 0x%px (%u) [P %u A %u T %u SS %lu "
+                     "S %lu H %lu I %u]",
+                     Request, data, data->Result, device, device->DeviceNumber, preemptible(),
+                     in_atomic(), in_task(), in_serving_softirq(), in_softirq(), in_hardirq(),
+                     irqs_disabled());
 
-    blk_status_t status = errno_to_blk_status(-EIO);
+    blk_status_t status = errno_to_blk_status(data->Result);
 
     blk_mq_end_request(Request, status);
 }
+
+#ifdef PWBD_MQ_DIAG
 
 //
 //
@@ -210,6 +213,8 @@ static void PwbdpCleanupRequest(struct request *Request)
             in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
 }
 
+#endif // PWBD_MQ_DIAG
+
 //
 //
 //
@@ -245,6 +250,7 @@ void PwbdpInitStaticMqOps(PPWBD_DEVICE Device)
     PwbdCtrl.MqOps.queue_rq = PwbdpQueueRequest;
     PwbdCtrl.MqOps.complete = PwbdpCompleteRequest;
 
+#ifdef PWBD_MQ_DIAG
     //
     // for diag purposes
     //
@@ -255,6 +261,7 @@ void PwbdpInitStaticMqOps(PPWBD_DEVICE Device)
     // PwbdCtrl.MqOps.init_request = PwbdpInitRequest;
     // PwbdCtrl.MqOps.exit_request = PwbdpExitRequest;
     PwbdCtrl.MqOps.cleanup_rq = PwbdpCleanupRequest;
+#endif // PWBD_MQ_DIAG
 }
 
 #endif // PWBD_USE_MQ

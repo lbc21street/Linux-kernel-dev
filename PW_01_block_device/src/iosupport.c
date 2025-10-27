@@ -97,12 +97,70 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
     return result;
 }
 
+#ifdef PWBD_USE_MQ
+
 //
 //
 //
 
-[[maybe_unused]] static int PwbdpPerformIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length,
-                                           uint32_t Offset, blk_opf_t OpFlags, sector_t Sector)
+int PwbdpPerformAsyncIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length, uint32_t Offset,
+                        blk_opf_t Operation, sector_t Sector)
+{
+    int result = 0;
+    void *address;
+
+    address = kmap_local_page(Page);
+
+    pr_info_detailed(
+        "Page 0x%px Length %u Offset %u Operation %u Sector %llu address 0x%px device 0x%px "
+        "(%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
+        Page, Length, Offset, Operation, Sector, address, Device, Device->DeviceNumber,
+        preemptible(), in_atomic(), in_task(), in_serving_softirq(), in_softirq(), in_hardirq(),
+        irqs_disabled());
+
+    switch (Operation) {
+        case REQ_OP_READ:
+            result = PwbdpReadFromDevice(Device, Add2Ptr(address, Offset), Length, Sector);
+
+            flush_dcache_page(Page);
+            break;
+
+        case REQ_OP_WRITE:
+            flush_dcache_page(Page);
+
+            result = PwbdpWriteToDevice(Device, Add2Ptr(address, Offset), Length, Sector);
+            break;
+
+        case REQ_OP_FLUSH:
+            pr_info("=> REQ_OP_FLUSH");
+            break;
+
+        case REQ_OP_DISCARD:
+            pr_info("=> REQ_OP_DISCARD");
+            break;
+
+        case REQ_OP_SECURE_ERASE:
+            pr_info("=> REQ_OP_SECURE_ERASE");
+            break;
+
+        default:
+            break;
+
+    } // switch (Operation)
+
+    kunmap_local(address);
+
+    return result;
+}
+
+#else // PWBD_USE_MQ
+
+//
+//
+//
+
+static int PwbdpPerformIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length, uint32_t Offset,
+                          blk_opf_t OpFlags, sector_t Sector)
 {
     int result = 0;
     void *address;
@@ -132,8 +190,6 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
     return result;
 }
 
-#ifndef PWBD_USE_MQ
-
 //
 //
 //
@@ -142,7 +198,7 @@ static void PwbdpDevOpsSubmitBio(struct bio *Bio)
 {
     PPWBD_DEVICE device = (PPWBD_DEVICE)Bio->bi_bdev->bd_disk->private_data;
 
-    // pr_info("Bio 0x%px bi_bdev 0x%px bd_disk 0x%px sector %llu device 0x%px (%u)", Bio,
+    // pr_info_detailed("Bio 0x%px bi_bdev 0x%px bd_disk 0x%px sector %llu device 0x%px (%u)", Bio,
     //         Bio->bi_bdev, Bio->bi_bdev->bd_disk, sector, device, device->DeviceNumber);
 
     //
@@ -303,7 +359,7 @@ static int PwbdpDevOpsIoctl(struct block_device *Bdev, blk_mode_t Mode, unsigned
 
         case BLKRRPART:
             pr_info("BLKRRPART");
-            result = -EINVAL;
+            // result = -EINVAL;
             break;
 
         case BLKGETSIZE:

@@ -21,6 +21,7 @@
 #include "supportmacros.h"
 
 #include "devicesupport.h"
+#include "iosupport.h"
 #include "workqueuesupport.h"
 
 //
@@ -89,6 +90,45 @@ void PwbdpDestroyWorkQueue(PPWBD_DEVICE Device)
 //
 //
 
+static int PwbdpProcessAsyncRequest(struct request *Request)
+{
+    int result = 0;
+    PPWBD_DEVICE device = (PPWBD_DEVICE)Request->q->queuedata;
+
+    might_sleep();
+
+    sector_t sector = blk_rq_pos(Request);
+    struct bio_vec bioVec;
+    struct req_iterator reqIter;
+
+    rq_for_each_segment(bioVec, Request, reqIter)
+    {
+        uint32_t length = bioVec.bv_len;
+
+        //
+        // check for unaligned buffer
+        //
+
+        WARN_ON_ONCE((bioVec.bv_offset & (device->SectorSize - 1)) ||
+                     (length & (device->SectorSize - 1)));
+
+        result = PwbdpPerformAsyncIo(device, bioVec.bv_page, length, bioVec.bv_offset,
+                                     req_op(Request), sector);
+
+        if (result != 0) {
+            break;
+        }
+
+        sector += (length >> device->SectorShift);
+    }
+
+    return result;
+}
+
+//
+//
+//
+
 static void PwbdpWorkQueueRoutine(struct work_struct *WorkItem)
 {
     PPWBD_REQUEST_DATA data = container_of(WorkItem, PWBD_REQUEST_DATA, WorkItem);
@@ -98,6 +138,8 @@ static void PwbdpWorkQueueRoutine(struct work_struct *WorkItem)
     pr_info("request 0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]", request,
             device, device->DeviceNumber, preemptible(), in_atomic(), in_task(),
             in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
+
+    data->Result = PwbdpProcessAsyncRequest(request);
 
     blk_mq_complete_request(request);
 }
@@ -112,6 +154,7 @@ bool PwbdpQueueWorkItem(struct request *Request)
     PPWBD_REQUEST_DATA data = (PPWBD_REQUEST_DATA)blk_mq_rq_to_pdu(Request);
 
     INIT_WORK(&data->WorkItem, PwbdpWorkQueueRoutine);
+    data->Result = 0;
 
     return queue_work(device->WorkQueue, &data->WorkItem);
 }

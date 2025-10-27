@@ -10,3 +10,4 @@ ${MODNAME}-objs := src/init.o src/devicesupport.o src/iosupport.o src/queuesuppo
 
 CFLAGS_MODULE += -DPWBD_DETAILED_TRACE
 CFLAGS_MODULE += -DPWBD_USE_MQ
+CFLAGS_MODULE += -DPWBD_MQ_DIAG
