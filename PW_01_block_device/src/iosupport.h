@@ -20,8 +20,8 @@ extern "C" {
 //
 //
 
-int PwbdpPerformAsyncIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length, uint32_t Offset,
-                        blk_opf_t Operation, sector_t Sector);
+[[nodiscard]] int PwbdpPerformAsyncIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length,
+                                      uint32_t Offset, blk_opf_t Operation, sector_t Sector);
 
 void PwbdpInitStaticDevOps(PPWBD_DEVICE Device);
 

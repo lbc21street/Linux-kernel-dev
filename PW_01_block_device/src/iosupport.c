@@ -103,8 +103,8 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
 //
 //
 
-int PwbdpPerformAsyncIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length, uint32_t Offset,
-                        blk_opf_t Operation, sector_t Sector)
+[[nodiscard]] int PwbdpPerformAsyncIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length,
+                                      uint32_t Offset, blk_opf_t Operation, sector_t Sector)
 {
     int result = 0;
     void *address;
@@ -159,19 +159,19 @@ int PwbdpPerformAsyncIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length,
 //
 //
 
-static int PwbdpPerformIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length, uint32_t Offset,
-                          blk_opf_t OpFlags, sector_t Sector)
+[[nodiscard]] static int PwbdpPerformIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length,
+                                        uint32_t Offset, blk_opf_t OpFlags, sector_t Sector)
 {
     int result = 0;
     void *address;
 
     address = kmap_local_page(Page);
 
-    pr_info_detailed(
-        "Page 0x%px Length %u Offset %u OpFlags 0x%08X Sector %llu address 0x%px device 0x%px "
-        "(%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
-        Page, Length, Offset, OpFlags, Sector, address, Device, Device->DeviceNumber, preemptible(),
-        in_atomic(), in_task(), in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
+    pr_info_detailed("Page 0x%px Length %u Offset %u OpFlags 0x%08X sync %u Sector %llu address "
+                     "0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
+                     Page, Length, Offset, OpFlags, op_is_sync(OpFlags), Sector, address, Device,
+                     Device->DeviceNumber, preemptible(), in_atomic(), in_task(),
+                     in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
 
     if (op_is_write(OpFlags)) {
         flush_dcache_page(Page);
