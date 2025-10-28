@@ -8,8 +8,6 @@
 
 #define pr_fmt(fmt) "[" KBUILD_MODNAME "] %s(): " fmt "\n", __func__
 
-#define PWBD_USE_MQ
-
 #include <linux/ctype.h>
 #include <linux/kernel.h>
 
@@ -88,13 +86,13 @@ static blk_status_t PwbdpQueueRequest(struct blk_mq_hw_ctx *Context,
     // current sector
     //
 
-    unsigned long start = blk_rq_pos(request) << device->SectorShift;
+    [[maybe_unused]] unsigned long start = blk_rq_pos(request) << device->SectorShift;
 
     //
     // bytes left in the current segment
     //
 
-    unsigned long length = blk_rq_cur_bytes(request);
+    [[maybe_unused]] unsigned long length = blk_rq_cur_bytes(request);
 
     pr_info_detailed("Context 0x%px Data 0x%px request 0x%px sync %u start 0x%lX length %lu device "
                      "0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
@@ -104,7 +102,7 @@ static blk_status_t PwbdpQueueRequest(struct blk_mq_hw_ctx *Context,
 
     blk_mq_start_request(request);
 
-    PwbdpQueueWorkItem(request);
+    PwbdQueueAsyncRequestWorkItem(request);
 
     // blk_mq_end_request(request, BLK_STS_OK);
 
@@ -117,7 +115,7 @@ static blk_status_t PwbdpQueueRequest(struct blk_mq_hw_ctx *Context,
 
 static void PwbdpCompleteRequest(struct request *Request)
 {
-    PPWBD_DEVICE device = Request->q->queuedata;
+    [[maybe_unused]] PPWBD_DEVICE device = Request->q->queuedata;
     PPWBD_REQUEST_DATA data = blk_mq_rq_to_pdu(Request);
 
     pr_info_detailed("Request 0x%px data 0x%px Result %d device 0x%px (%u) [P %u A %u T %u SS %lu "

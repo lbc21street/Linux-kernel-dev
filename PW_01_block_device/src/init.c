@@ -20,15 +20,24 @@
 #include "devicesupport.h"
 #include "paramsupport.h"
 #include "sysfssupport.h"
+#include "workqueuesupport.h"
 
 //
 //
 //
+
+#ifdef PWBD_DETAILED_TRACE
+#pragma message "-------- Detailed trace"
+#endif // PWBD_DETAILED_TRACE
 
 #ifdef PWBD_USE_MQ
 #pragma message "-------- Using MQ"
 #else // PWBD_USE_MQ
 #pragma message "-------- Using legacy submit_bio"
+#endif // PWBD_USE_MQ
+
+#ifdef PWBD_MQ_DIAG
+#pragma message "-------- MQ diag stuff"
 #endif // PWBD_USE_MQ
 
 //
@@ -66,9 +75,13 @@ static void PwbdpCaptureDeviceParameters(void)
 
 static void PwbdpTeardown(void)
 {
-    PwbdRemoveDevices();
+    PwbdUninitializeDevices();
+
+    PwbdRemoveClassAttributeAdd();
 
     PwbdDestroyClass();
+
+    PwbdDestroyDeviceRemovalWorkQueue();
 }
 
 //
@@ -88,13 +101,25 @@ static int __init PwbdInit(void)
 
         PwbdpCaptureDeviceParameters();
 
+        result = PwbdAllocateDeviceRemovalWorkQueue();
+
+        if (result != 0) {
+            break;
+        }
+
         result = PwbdCreateClass();
 
         if (result != 0) {
             break;
         }
 
-        result = PwbdAddDevices();
+        result = PwbdCreateClassAttributeAdd();
+
+        if (result != 0) {
+            break;
+        }
+
+        result = PwbdInitializeDevices();
 
         if (result != 0) {
             break;

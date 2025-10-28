@@ -16,14 +16,13 @@ extern "C" {
 //
 //
 
+[[nodiscard]] int PwbdProcessAsyncRequest(struct request *Request);
+
 //
 //
 //
 
-[[nodiscard]] int PwbdpPerformAsyncIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length,
-                                      uint32_t Offset, blk_opf_t Operation, sector_t Sector);
-
-void PwbdpInitStaticDevOps(PPWBD_DEVICE Device);
+void PwbdInitStaticDevOps(PPWBD_DEVICE Device);
 
 #ifdef __cplusplus
 }

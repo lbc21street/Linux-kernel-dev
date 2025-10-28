@@ -8,6 +8,7 @@
 #pragma once
 
 #include <linux/blk-mq.h>
+#include <linux/device.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
 
@@ -91,6 +92,7 @@ static_assert(PWBD_DEFAULT_SECTOR_SHIFT <= PAGE_SHIFT);
 typedef enum _PWBD_DEVICE_FLAGS {
     PWBD_DEVFL_DISK_ADDED = 0x00000001,
     PWBD_DEVFL_TAG_SET_ALLOCATED = 0x00000002,
+    PWBD_DEVFL_STARTING_TO_REMOVE = 0x00000004,
 
 } PWBD_DEVICE_FLAGS;
 
@@ -101,7 +103,8 @@ typedef enum _PWBD_DEVICE_FLAGS {
 typedef struct _PWBD_DEVICE_FLAGS_BF {
     uint32_t FlDiskAdded : 1;
     uint32_t FlTagSetAllocated : 1;
-    uint32_t FlReserved : 30;
+    uint32_t FlStartingToRemove : 1;
+    uint32_t FlReserved : 29;
 
 } PWBD_DEVICE_FLAGS_BF;
 
@@ -137,19 +140,25 @@ typedef struct _PWBD_DEVICE {
 
     struct gendisk *Disk;
 
+    struct device *ClassDevice;
+
+    struct work_struct DeferredRemovalWorkItem;
+
 } PWBD_DEVICE, *PPWBD_DEVICE;
 
 //
 //
 //
 
-//
-//
-//
+[[nodiscard]] int PwbdFindFreeDeviceSlot(void);
 
-[[nodiscard]] int PwbdAddDevices(void);
+[[nodiscard]] int PwbdAddDevice(void);
 
-void PwbdRemoveDevices(void);
+bool PwbdRemoveDeviceDeferred(PPWBD_DEVICE Device);
+
+[[nodiscard]] int PwbdInitializeDevices(void);
+
+void PwbdUninitializeDevices(void);
 
 //
 //

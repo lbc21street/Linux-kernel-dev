@@ -8,8 +8,6 @@
 
 #define pr_fmt(fmt) "[" KBUILD_MODNAME "] %s(): " fmt "\n", __func__
 
-#define PWBD_USE_MQ
-
 #include <linux/ctype.h>
 #include <linux/kernel.h>
 
@@ -41,8 +39,8 @@ static int PwbdpWriteToDevice(PPWBD_DEVICE Device, const void *Data, size_t Data
 {
     int result = 0;
 
-    pr_info("Data 0x%px DataLength %lu Sector %llu device 0x%px (%u)", Data, DataLength, Sector,
-            Device, Device->DeviceNumber);
+    pr_info_detailed("Data 0x%px DataLength %lu Sector %llu device 0x%px (%u)", Data, DataLength,
+                     Sector, Device, Device->DeviceNumber);
 
     uint32_t offset = (Sector & (Device->SectorsPerPage - 1)) << Device->SectorShift;
 
@@ -73,8 +71,8 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
 {
     int result = 0;
 
-    pr_info("Data 0x%px DataLength %lu Sector %llu device 0x%px (%u)", Data, DataLength, Sector,
-            Device, Device->DeviceNumber);
+    pr_info_detailed("Data 0x%px DataLength %lu Sector %llu device 0x%px (%u)", Data, DataLength,
+                     Sector, Device, Device->DeviceNumber);
 
     uint32_t offset = (Sector & (Device->SectorsPerPage - 1)) << Device->SectorShift;
 
@@ -103,8 +101,9 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
 //
 //
 
-[[nodiscard]] int PwbdpPerformAsyncIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length,
-                                      uint32_t Offset, blk_opf_t Operation, sector_t Sector)
+[[nodiscard]] static int PwbdpPerformAsyncIo(PPWBD_DEVICE Device, struct page *Page,
+                                             uint32_t Length, uint32_t Offset, blk_opf_t Operation,
+                                             sector_t Sector)
 {
     int result = 0;
     void *address;
@@ -149,6 +148,55 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
     } // switch (Operation)
 
     kunmap_local(address);
+
+    return result;
+}
+
+//
+//
+//
+
+[[nodiscard]] int PwbdProcessAsyncRequest(struct request *Request)
+{
+    int result = 0;
+    PPWBD_DEVICE device = (PPWBD_DEVICE)Request->q->queuedata;
+
+    might_sleep();
+
+    sector_t sector = blk_rq_pos(Request);
+    struct bio_vec bioVec;
+    struct req_iterator reqIter;
+
+    rq_for_each_segment(bioVec, Request, reqIter)
+    {
+        uint32_t length = bioVec.bv_len;
+
+        //
+        // check for unaligned buffer
+        //
+
+        WARN_ON_ONCE((bioVec.bv_offset & (device->SectorSize - 1)) ||
+                     (length & (device->SectorSize - 1)));
+
+        result = PwbdpPerformAsyncIo(device, bioVec.bv_page, length, bioVec.bv_offset,
+                                     req_op(Request), sector);
+
+        if (result != 0) {
+            break;
+        }
+
+        sector += (length >> device->SectorShift);
+
+        //
+        // voluntarily yields the CPU from the currently executing task, allowing the scheduler to
+        // run another task that might be waiting in the CPU's runqueue; prevents CPU hogging and
+        // improves responsiveness, plus it's a mechanism of voluntary preemption in non-preemptible
+        // contexts
+        //
+
+        cond_resched();
+
+    } // rq_for_each_segment
 
     return result;
 }
@@ -240,6 +288,17 @@ static void PwbdpDevOpsSubmitBio(struct bio *Bio)
 
     //     pos += length;
 
+    //     //
+    //     // voluntarily yields the CPU from the currently executing task, allowing the scheduler
+    //     to
+    //     // run another task that might be waiting in the CPU's runqueue; prevents CPU hogging and
+    //     // improves responsiveness, plus it's a mechanism of voluntary preemption in
+    //     non-preemptible
+    //     // contexts
+    //     //
+
+    //     cond_resched();
+
     // } // bio_for_each_segment
 
     bio_for_each_segment(bioVec, Bio, bvecIter)
@@ -261,7 +320,17 @@ static void PwbdpDevOpsSubmitBio(struct bio *Bio)
         }
 
         sector += (length >> device->SectorShift);
-    }
+
+        //
+        // voluntarily yields the CPU from the currently executing task, allowing the scheduler to
+        // run another task that might be waiting in the CPU's runqueue; prevents CPU hogging and
+        // improves responsiveness, plus it's a mechanism of voluntary preemption in non-preemptible
+        // contexts
+        //
+
+        cond_resched();
+
+    } // bio_for_each_segment
 
     bio_end_io_acct(Bio, startTime);
 
@@ -288,11 +357,12 @@ static void PwbdpDevOpsSubmitBio(struct bio *Bio)
 //
 //
 
-static int PwbdpDevOpsOpen(struct gendisk *Disk, blk_mode_t Mode)
+static int PwbdpDevOpsOpen(struct block_device *Bdev, fmode_t Mode)
 {
-    PPWBD_DEVICE device = (PPWBD_DEVICE)Disk->private_data;
+    [[maybe_unused]] PPWBD_DEVICE device = (PPWBD_DEVICE)Bdev->bd_disk->private_data;
 
-    pr_info("Disk 0x%px Mode %u device 0x%px (%u)", Disk, Mode, device, device->DeviceNumber);
+    pr_info_detailed("Disk 0x%px Mode 0x%08X device 0x%px (%u)", Disk, Mode, device,
+                     device->DeviceNumber);
 
     return 0;
 }
@@ -301,24 +371,25 @@ static int PwbdpDevOpsOpen(struct gendisk *Disk, blk_mode_t Mode)
 //
 //
 
-static void PwbdpDevOpsRelease(struct gendisk *Disk)
+static void PwbdpDevOpsRelease(struct gendisk *Disk, fmode_t Mode)
 {
-    PPWBD_DEVICE device = (PPWBD_DEVICE)Disk->private_data;
+    [[maybe_unused]] PPWBD_DEVICE device = (PPWBD_DEVICE)Disk->private_data;
 
-    pr_info("Disk 0x%px device 0x%px (%u)", Disk, device, device->DeviceNumber);
+    pr_info("Disk 0x%px openers %u device 0x%px (%u)", Disk, disk_openers(Disk), device,
+            device->DeviceNumber);
 }
 
 //
 //
 //
 
-static int PwbdpDevOpsIoctl(struct block_device *Bdev, blk_mode_t Mode, unsigned Cmd,
+static int PwbdpDevOpsIoctl(struct block_device *Bdev, fmode_t Mode, unsigned Cmd,
                             unsigned long Arg)
 {
     PPWBD_DEVICE device = (PPWBD_DEVICE)Bdev->bd_disk->private_data;
 
-    pr_info("Bdev 0x%px Mode %u Cmd 0x%08X Arg 0x%lX device 0x%px (%u)", Bdev, Mode, Cmd, Arg,
-            device, device->DeviceNumber);
+    pr_info_detailed("Bdev 0x%px Mode 0x%08X Cmd 0x%08X Arg 0x%lX device 0x%px (%u)", Bdev, Mode,
+                     Cmd, Arg, device, device->DeviceNumber);
 
     int result = 0;
 
@@ -482,7 +553,7 @@ static int PwbdpDevOpsGetUniqueId(struct gendisk *Disk, u8 Id[16], enum blk_uniq
 //
 //
 
-void PwbdpInitStaticDevOps(PPWBD_DEVICE Device)
+void PwbdInitStaticDevOps(PPWBD_DEVICE Device)
 {
 #ifndef PWBD_USE_MQ
     PwbdCtrl.DevOps.submit_bio = PwbdpDevOpsSubmitBio;

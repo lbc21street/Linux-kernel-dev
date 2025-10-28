@@ -1,6 +1,6 @@
 PWD := $(shell pwd)
 # OS_VER := $(shell uname -r)
-OS_VER := 6.8.0-40-generic
+OS_VER := 6.1.130
 KERNEL_DIR ?= /lib/modules/$(OS_VER)/build
 
 SRC_DIR := $(PWD)/src
@@ -15,8 +15,6 @@ CLANG_FORMAT_VERS ?= 18
 CLANG_FORMAT := clang-format-$(CLANG_FORMAT_VERS)
 CLANG_FORMAT_FLAGS += -i
 FORMAT_FILES := $(SRC_DIR)/*.c
-
-CHECKER := sudo ./checker/main.py
 
 $(info PWD: $(PWD))
 $(info OS_VER: $(OS_VER))
@@ -40,7 +38,4 @@ clean:
 	rm -r $(INT_DIR)
 	rm -r $(BUILD_DIR)
 
-check:
-	$(CHECKER) hwcb
-
-.PHONY: kbuild format clean check
+.PHONY: kbuild format clean

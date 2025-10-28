@@ -109,6 +109,15 @@ static int PwbdpCheckParamString(const char *Val, uint32_t *Length)
 //
 //
 
+static inline bool PwbdpIsParametersCaptured(void)
+{
+    return BooleanFlagOn(PwbdCtrl.Flags, PWBD_CTLFL_PARAMETERS_CAPTURED);
+}
+
+//
+//
+//
+
 static int PwbdSetDeviceCount(const char *Value, const struct kernel_param *KernelParam)
 {
     if (PwbdpIsParametersCaptured()) {

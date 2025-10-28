@@ -15,6 +15,10 @@
 extern "C" {
 #endif // __cplusplus
 
+//
+//
+//
+
 #ifdef PWBD_USE_MQ
 
 //
@@ -29,15 +33,27 @@ typedef struct _PWBD_REQUEST_DATA {
 
 } PWBD_REQUEST_DATA, *PPWBD_REQUEST_DATA;
 
+#endif // PWBD_USE_MQ
+
 //
 //
 //
 
-[[nodiscard]] int PwbdpAllocateWorkQueue(PPWBD_DEVICE Device);
+[[nodiscard]] int PwbdAllocateDeviceRemovalWorkQueue(void);
 
-void PwbdpDestroyWorkQueue(PPWBD_DEVICE Device);
+void PwbdDestroyDeviceRemovalWorkQueue(void);
 
-bool PwbdpQueueWorkItem(struct request *Request);
+#ifdef PWBD_USE_MQ
+
+//
+//
+//
+
+[[nodiscard]] int PwbdAllocateDeviceWorkQueue(PPWBD_DEVICE Device);
+
+void PwbdDestroyDeviceWorkQueue(PPWBD_DEVICE Device);
+
+bool PwbdQueueAsyncRequestWorkItem(struct request *Request);
 
 #endif // PWBD_USE_MQ
 

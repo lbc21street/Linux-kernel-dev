@@ -8,14 +8,15 @@
 
 #define pr_fmt(fmt) "[" KBUILD_MODNAME "] %s(): " fmt "\n", __func__
 
-#define PWBD_USE_MQ
-
+#include <linux/bitmap.h>
 #include <linux/ctype.h>
 #include <linux/kernel.h>
 #include <linux/vmalloc.h>
 
+#include <linux/atomic.h>
 #include <linux/blk-mq.h>
 #include <linux/blkdev.h>
+#include <linux/semaphore.h>
 
 #include "data.h"
 #include "supportmacros.h"
@@ -23,7 +24,14 @@
 #include "devicesupport.h"
 #include "iosupport.h"
 #include "queuesupport.h"
+#include "sysfssupport.h"
 #include "workqueuesupport.h"
+
+//
+//
+//
+
+static void PwbdpTeardownDevice(PPWBD_DEVICE Device);
 
 //
 //
@@ -84,7 +92,7 @@ static void PwbdpUnregisterBlockDevice(void)
     Device->DiskData = vmalloc(Device->DiskSize);
 
     if (Device->DiskData == NULL) {
-        pr_err("__vmalloc() failed (%llu bytes) device 0x%px (%u)", Device->DiskSize, Device,
+        pr_err("vmalloc() failed (%llu bytes) device 0x%px (%u)", Device->DiskSize, Device,
                Device->DeviceNumber);
 
         return -ENOMEM;
@@ -207,13 +215,13 @@ static void PwbdpFreeDiskData(PPWBD_DEVICE Device)
         // should also check for DISK_EVENT_EJECT_REQUEST
         //
 
-        // Device->Disk->events = DISK_EVENT_MEDIA_CHANGE;
+        SetFlag(Device->Disk->events, DISK_EVENT_MEDIA_CHANGE);
 
         //
         // forward events to udev
         //
 
-        // Device->Disk->event_flags = DISK_EVENT_FLAG_UEVENT;
+        SetFlag(Device->Disk->event_flags, DISK_EVENT_FLAG_UEVENT);
 
         //
         // name of major driver, 32 symbols max
@@ -223,10 +231,13 @@ static void PwbdpFreeDiskData(PPWBD_DEVICE Device)
                  Device->DeviceNumber);
 
         //
+        // sets disk capacity and notifies if the size is not currently zero and will not be set to
+        // zero; returns true if a uevent was sent, otherwise false
+        //
         // disk size in sectors
         //
 
-        set_capacity(Device->Disk, Device->Capacity);
+        set_capacity_and_notify(Device->Disk, Device->Capacity);
 
         //
         // should be researched to use other sector sizes
@@ -247,7 +258,7 @@ static void PwbdpFreeDiskData(PPWBD_DEVICE Device)
         // always completes in submit context
         //
 
-        blk_queue_flag_set(QUEUE_FLAG_SYNCHRONOUS, Device->Disk->queue);
+        // blk_queue_flag_set(QUEUE_FLAG_SYNCHRONOUS, Device->Disk->queue);
 
         //
         // device supports NOWAIT
@@ -261,7 +272,7 @@ static void PwbdpFreeDiskData(PPWBD_DEVICE Device)
 
         // blk_queue_flag_set(QUEUE_FLAG_NOMERGES, Device->Disk->queue);
 
-        blk_queue_max_hw_sectors(Device->Disk->queue, BLK_DEF_MAX_SECTORS_CAP);
+        blk_queue_max_hw_sectors(Device->Disk->queue, BLK_DEF_MAX_SECTORS);
 
         pr_info("adding disk <%s> device 0x%px (%u)", Device->Disk->disk_name, Device,
                 Device->DeviceNumber);
@@ -278,6 +289,8 @@ static void PwbdpFreeDiskData(PPWBD_DEVICE Device)
 
         pr_info("added disk 0x%px device 0x%px (%u)", Device->Disk, Device, Device->DeviceNumber);
 
+        disk_force_media_change(Device->Disk, DISK_EVENT_MEDIA_CHANGE);
+
     } while (FALSE);
 
     return result;
@@ -291,6 +304,8 @@ static void PwbdpDestroyDisk(PPWBD_DEVICE Device)
 {
     if (Device->Disk) {
         if (FlagOn(Device->Flags, PWBD_DEVFL_DISK_ADDED)) {
+            disk_force_media_change(Device->Disk, DISK_EVENT_MEDIA_CHANGE);
+
             pr_info("deleting disk 0x%px device 0x%px (%u)", Device->Disk, Device,
                     Device->DeviceNumber);
 
@@ -312,9 +327,9 @@ static void PwbdpDestroyDisk(PPWBD_DEVICE Device)
 //
 //
 
-static void PwbdpInitDeviceParameters(PPWBD_DEVICE Device, uint32_t Minor)
+static void PwbdpInitDeviceParameters(PPWBD_DEVICE Device, uint32_t DeviceNumber)
 {
-    Device->DeviceNumber = Minor;
+    Device->DeviceNumber = DeviceNumber;
 
     //
     // [TODO]
@@ -332,15 +347,110 @@ static void PwbdpInitDeviceParameters(PPWBD_DEVICE Device, uint32_t Minor)
 
     pr_info("set params => device 0x%px (%u) SectorSize %u SectorShift %u SectorsPerPage %u "
             "DiskSize %llu Capacity %llu",
-            Device, Minor, Device->SectorSize, Device->SectorShift, Device->SectorsPerPage,
-            Device->DiskSize, Device->Capacity);
+            Device, Device->DeviceNumber, Device->SectorSize, Device->SectorShift,
+            Device->SectorsPerPage, Device->DiskSize, Device->Capacity);
 }
 
 //
 //
 //
 
-[[nodiscard]] static PPWBD_DEVICE PwbdpAddDevice(uint32_t Minor)
+static inline void PwbdpSetDeviceBit(uint32_t DeviceNumber)
+{
+    bitmap_set(PwbdCtrl.DeviceBitmap, DeviceNumber, 1);
+}
+
+//
+//
+//
+
+static inline void PwbdpClearDeviceBit(uint32_t DeviceNumber)
+{
+    bitmap_clear(PwbdCtrl.DeviceBitmap, DeviceNumber, 1);
+}
+
+//
+//
+//
+
+static inline void PwbdpSetDeviceSlot(PPWBD_DEVICE Device, uint32_t DeviceNumber)
+{
+    PwbdpSetDeviceBit(DeviceNumber);
+
+    PwbdCtrl.Devices[DeviceNumber] = Device;
+}
+
+//
+//
+//
+
+static inline void PwbdpClearDeviceSlot(uint32_t DeviceNumber)
+{
+    PwbdpClearDeviceBit(DeviceNumber);
+
+    PwbdCtrl.Devices[DeviceNumber] = NULL;
+}
+
+//
+//
+//
+
+[[nodiscard]] int PwbdFindFreeDeviceSlot(void)
+{
+    int index = find_next_zero_bit(PwbdCtrl.DeviceBitmap, PwbdCtrl.NumberOfDevices, 0);
+
+    if (index == PwbdCtrl.NumberOfDevices) {
+        pr_warn("no free device slot found (%u)", PwbdCtrl.NumberOfDevices);
+
+        index = -EMFILE;
+    }
+
+    return index;
+}
+
+//
+//
+//
+
+static void PwbdpSignalDeviceRemovalEvent(void)
+{
+    pr_info("signalling DeviceRemovalEvent");
+
+    up(&PwbdCtrl.DeviceRemovalEvent);
+}
+
+static void PwbdpWaitForDeviceRemovalEvent(void)
+{
+    pr_info("waiting for DeviceRemovalEvent");
+
+    down(&PwbdCtrl.DeviceRemovalEvent);
+
+    pr_info("waiting for DeviceRemovalEvent complete");
+}
+
+//
+//
+//
+
+static inline void PwbdpAcquireDeviceLock(void)
+{
+    mutex_lock(&PwbdCtrl.DeviceLock);
+}
+
+//
+//
+//
+
+static inline void PwbdpReleaseDeviceLock(void)
+{
+    mutex_unlock(&PwbdCtrl.DeviceLock);
+}
+
+//
+//
+//
+
+[[nodiscard]] static int PwbdpAddDevice(uint32_t DeviceNumber)
 {
     PPWBD_DEVICE device = NULL;
     int result = 0;
@@ -351,25 +461,25 @@ static void PwbdpInitDeviceParameters(PPWBD_DEVICE Device, uint32_t Minor)
         if (device == NULL) {
             result = -ENOMEM;
 
-            pr_err("memory alloc failed for device (%u bytes) minor %u",
-                   (uint32_t)sizeof(PWBD_DEVICE), Minor);
+            pr_err("memory alloc failed for device (%u bytes) DeviceNumber %u",
+                   (uint32_t)sizeof(PWBD_DEVICE), DeviceNumber);
 
             break;
         }
 
-        pr_info("allocated device 0x%px (%u)", device, Minor);
+        pr_info("allocated device 0x%px (%u)", device, DeviceNumber);
 
-        PwbdpInitDeviceParameters(device, Minor);
+        PwbdpInitDeviceParameters(device, DeviceNumber);
 
 #ifdef PWBD_USE_MQ
         PwbdpInitStaticMqOps(device);
         PwbdpInitStaticTagSet(device);
 #endif // PWBD_USE_MQ
 
-        PwbdpInitStaticDevOps(device);
+        PwbdInitStaticDevOps(device);
 
 #ifdef PWBD_USE_MQ
-        result = PwbdpAllocateWorkQueue(device);
+        result = PwbdAllocateDeviceWorkQueue(device);
 
         if (result != 0) {
             break;
@@ -388,15 +498,109 @@ static void PwbdpInitDeviceParameters(PPWBD_DEVICE Device, uint32_t Minor)
             break;
         }
 
-        PwbdCtrl.Devices[Minor] = device;
+        result = PwbdCreateClassDevice(device);
+
+        if (result != 0) {
+            break;
+        }
+
+        result = PwbdCreateDeviceAttributeRemove(device);
+
+        if (result != 0) {
+            break;
+        }
+
+        PwbdpSetDeviceSlot(device, DeviceNumber);
+
+        atomic_inc(&PwbdCtrl.DeviceCount);
 
     } while (FALSE);
 
     if (result != 0) {
-        device = ERR_PTR(result);
+        if (device) {
+            PwbdpTeardownDevice(device);
+        }
     }
 
-    return device;
+    return result;
+}
+
+//
+//
+//
+
+[[nodiscard]] int PwbdAddDevice(void)
+{
+    PwbdpAcquireDeviceLock();
+
+    if (FlagOn(PwbdCtrl.Flags, PWBD_CTLFL_TEARING_DOWN)) {
+        PwbdpReleaseDeviceLock();
+
+        pr_warn("driver is already being torn down");
+
+        return -ENODEV;
+    }
+
+    int result = PwbdFindFreeDeviceSlot();
+
+    if (result < 0) {
+        PwbdpReleaseDeviceLock();
+
+        return result;
+    }
+
+    uint32_t index = result;
+
+    pr_info("found free device slot %u", index);
+
+    result = PwbdpAddDevice(index);
+
+    PwbdpReleaseDeviceLock();
+
+    return result;
+}
+
+//
+//
+//
+
+static bool PwbdpStartingToRemoveDevice(PPWBD_DEVICE Device)
+{
+    PWBD_DEVICE_FLAGS flags =
+        atomic_fetch_or(PWBD_DEVFL_STARTING_TO_REMOVE, (atomic_t *)&Device->Flags);
+
+    if (!FlagOn(flags, PWBD_DEVFL_STARTING_TO_REMOVE)) {
+        pr_info("device 0x%px (%u) has been marked for removal", Device, Device->DeviceNumber);
+
+        return TRUE;
+    }
+
+    pr_info("device 0x%px (%u) is already being removed", Device, Device->DeviceNumber);
+
+    return FALSE;
+}
+
+//
+//
+//
+
+static void PwbdpTeardownDevice(PPWBD_DEVICE Device)
+{
+    PwbdRemoveDeviceAttributeRemove(Device);
+
+    PwbdDestroyClassDevice(Device);
+
+    PwbdpDestroyDisk(Device);
+
+#ifdef PWBD_USE_MQ
+    PwbdpFreeTagSet(Device);
+
+    PwbdDestroyDeviceWorkQueue(Device);
+#endif // PWBD_USE_MQ
+
+    pr_info("freeing device 0x%px", Device);
+
+    kfree(Device);
 }
 
 //
@@ -405,27 +609,120 @@ static void PwbdpInitDeviceParameters(PPWBD_DEVICE Device, uint32_t Minor)
 
 static void PwbdpRemoveDevice(PPWBD_DEVICE Device)
 {
-    PwbdpDestroyDisk(Device);
+    uint32_t index = Device->DeviceNumber;
 
-#ifdef PWBD_USE_MQ
-    PwbdpFreeTagSet(Device);
+    //
+    // [NOTE]
+    // [IMPORTANT]
+    //
+    // after this call the Device pointer will get invalid
+    //
 
-    PwbdpDestroyWorkQueue(Device);
-#endif // PWBD_USE_MQ
+    PwbdpTeardownDevice(Device);
+
+    PwbdpClearDeviceSlot(index);
+
+    if (!atomic_dec_return(&PwbdCtrl.DeviceCount)) {
+        PwbdpSignalDeviceRemovalEvent();
+    }
 }
 
 //
 //
 //
 
-[[nodiscard]] int PwbdAddDevices(void)
+static bool PwbdRemoveDevice(PPWBD_DEVICE Device)
+{
+    //
+    // [NOTE]
+    //
+    // protect ourselves from concurrent device removals (this one and in the teardown code)
+    //
+
+    if (!PwbdpStartingToRemoveDevice(Device)) {
+        return FALSE;
+    }
+
+    PwbdpRemoveDevice(Device);
+
+    return TRUE;
+}
+
+//
+//
+//
+
+static void PwbdpDeviceRemovalWorkerRoutine(struct work_struct *WorkItem)
+{
+    PPWBD_DEVICE device = container_of(WorkItem, PWBD_DEVICE, DeferredRemovalWorkItem);
+
+    PwbdpAcquireDeviceLock();
+
+    PwbdpRemoveDevice(device);
+
+    PwbdpReleaseDeviceLock();
+}
+
+//
+//
+//
+
+bool PwbdRemoveDeviceDeferred(PPWBD_DEVICE Device)
+{
+    //
+    // [NOTE]
+    //
+    // protect ourselves from concurrent device removals (this one and in the teardown code)
+    //
+
+    if (!PwbdpStartingToRemoveDevice(Device)) {
+        return FALSE;
+    }
+
+    pr_info("queueing device removal - device 0x%px (%u) count %u", Device, Device->DeviceNumber,
+            atomic_read(&PwbdCtrl.DeviceCount));
+
+    INIT_WORK(&Device->DeferredRemovalWorkItem, PwbdpDeviceRemovalWorkerRoutine);
+
+    //
+    // [NOTE]
+    // [QUESTIONABLE]
+    //
+    // perhaps we should use our own workqueue, just to be able to flush or drain it
+    //
+
+    queue_work(PwbdCtrl.DeviceRemovalWorkQueue, &Device->DeferredRemovalWorkItem);
+
+    return TRUE;
+}
+
+//
+//
+//
+
+[[nodiscard]] int PwbdInitializeDevices(void)
 {
     int result = 0;
 
     do {
+        mutex_init(&PwbdCtrl.DeviceLock);
+
+        sema_init(&PwbdCtrl.DeviceRemovalEvent, 0);
+
         result = PwbdpRegisterBlockDevice();
 
         if (result != 0) {
+            break;
+        }
+
+        PwbdCtrl.DeviceBitmap = bitmap_zalloc(BITS_TO_LONGS(PwbdCtrl.NumberOfDevices), GFP_KERNEL);
+
+        if (PwbdCtrl.DeviceBitmap == NULL) {
+            result = -ENOMEM;
+
+            pr_err("bitmap_zalloc() failed for device bitmap (%u bytes)",
+                   (uint32_t)BITS_TO_BYTES(PwbdCtrl.NumberOfDevices));
+
             break;
         }
 
@@ -443,18 +740,29 @@ static void PwbdpRemoveDevice(PPWBD_DEVICE Device)
 
         int index = 0;
 
+        PwbdpAcquireDeviceLock();
+
         while (index < PwbdCtrl.NumberOfDevices) {
-            PPWBD_DEVICE device = PwbdpAddDevice(index);
+            result = PwbdpAddDevice(index);
 
-            if (IS_ERR(device)) {
-                result = PTR_ERR(device);
-
+            if (result != 0) {
                 break;
             }
 
             ++index;
 
         } // while (i < PwbdCtrl.NumberOfDevices)
+
+        PwbdpReleaseDeviceLock();
+
+        if (result != 0) {
+            //
+            // if we've failed while creating and adding devices, signal the device removal event
+            // just not to get stuck on that event in teardown code
+            //
+
+            PwbdpSignalDeviceRemovalEvent();
+        }
 
     } while (FALSE);
 
@@ -465,25 +773,46 @@ static void PwbdpRemoveDevice(PPWBD_DEVICE Device)
 //
 //
 
-void PwbdRemoveDevices(void)
+void PwbdUninitializeDevices(void)
 {
     PwbdpUnregisterBlockDevice();
 
-    if (PwbdCtrl.Devices == NULL) {
-        return;
+    if (PwbdCtrl.Devices) {
+        int index = 0;
+
+        PwbdpAcquireDeviceLock();
+
+        SetFlag(PwbdCtrl.Flags, PWBD_CTLFL_TEARING_DOWN);
+
+        while (index < PwbdCtrl.NumberOfDevices) {
+            if (PwbdCtrl.Devices[index]) {
+                PwbdRemoveDevice(PwbdCtrl.Devices[index]);
+            }
+
+            ++index;
+
+        } // while (index < PwbdCtrl.NumberOfDevices)
+
+        PwbdpReleaseDeviceLock();
+
+        //
+        // wait for all devices to go away
+        //
+
+        PwbdpWaitForDeviceRemovalEvent();
+
+        pr_info("freeing Devices 0x%px", PwbdCtrl.Devices);
+
+        kfree(PwbdCtrl.Devices);
+        PwbdCtrl.Devices = NULL;
     }
 
-    int index = 0;
+    if (PwbdCtrl.DeviceBitmap) {
+        pr_info("freeing DeviceBitmap 0x%px", PwbdCtrl.DeviceBitmap);
 
-    while (index < PwbdCtrl.NumberOfDevices) {
-        if (PwbdCtrl.Devices[index]) {
-            PwbdpRemoveDevice(PwbdCtrl.Devices[index]);
-            PwbdCtrl.Devices[index] = NULL;
-        }
-
-        ++index;
-
-    } // while (index < PwbdCtrl.NumberOfDevices)
+        bitmap_free(PwbdCtrl.DeviceBitmap);
+        PwbdCtrl.DeviceBitmap = NULL;
+    }
 }
 
 //=================================================================================================

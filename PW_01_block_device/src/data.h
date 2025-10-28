@@ -7,8 +7,13 @@
 //=================================================================================================
 #pragma once
 
+#include <linux/blk-mq.h>
+#include <linux/blkdev.h>
 #include <linux/device/class.h>
+#include <linux/mutex.h>
+#include <linux/semaphore.h>
 #include <linux/types.h>
+#include <linux/workqueue.h>
 
 #include "devicesupport.h"
 #include "supportmacros.h"
@@ -81,6 +86,7 @@ extern "C" {
 typedef enum _PWBD_CTRL_FLAGS {
     PWBD_CTLFL_DEVICE_REGISTERED = 0x00000001,
     PWBD_CTLFL_PARAMETERS_CAPTURED = 0x00000002,
+    PWBD_CTLFL_TEARING_DOWN = 0x00000004,
 
 } PWBD_CTRL_FLAGS;
 
@@ -91,8 +97,9 @@ typedef enum _PWBD_CTRL_FLAGS {
 typedef struct _PWBD_CTRL_FLAGS_BF {
     uint32_t FlDeviceRegistered : 1;
     uint32_t FlParametersCaptured : 1;
+    uint32_t FlTearingDown : 1;
 
-    uint32_t FlReserved : 30;
+    uint32_t FlReserved : 29;
 
 } PWBD_CTRL_FLAGS_BF;
 
@@ -121,7 +128,14 @@ typedef struct _PWBD_CTRL {
     uint16_t SectorSize;
     uint64_t DiskSize; // in bytes
 
+    struct mutex DeviceLock;
     PPWBD_DEVICE *Devices;
+    uintptr_t *DeviceBitmap;
+
+    struct workqueue_struct *DeviceRemovalWorkQueue;
+
+    atomic_t DeviceCount;
+    struct semaphore DeviceRemovalEvent;
 
     struct blk_mq_ops MqOps;
 
@@ -130,15 +144,6 @@ typedef struct _PWBD_CTRL {
 } PWBD_CTRL, *PPWBD_CTRL;
 
 extern PWBD_CTRL PwbdCtrl;
-
-//
-//
-//
-
-static inline bool PwbdpIsParametersCaptured(void)
-{
-    return BooleanFlagOn(PwbdCtrl.Flags, PWBD_CTLFL_PARAMETERS_CAPTURED);
-}
 
 //
 //
