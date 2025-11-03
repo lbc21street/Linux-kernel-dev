@@ -1,0 +1,13 @@
+MODNAME := pwblkdev
+# modules to be built
+obj-m := ${MODNAME}.o
+
+# object files for a module
+#${MODNAME}-y := src/devicesupport.o src/init.o src/iosupport.o src/queuesupport.o src/paramsupport.o src/sysfssupport.o src/workqueuesupport.o
+
+# object files for a module
+${MODNAME}-objs := src/init.o src/devicesupport.o src/iosupport.o src/queuesupport.o src/paramsupport.o src/sysfssupport.o src/workqueuesupport.o
+
+CFLAGS_MODULE += -DPWBD_USE_MQ
+# CFLAGS_MODULE += -DPWBD_MQ_DIAG
+# CFLAGS_MODULE += -DPWBD_USE_GEOMETRY_CAPACITY
