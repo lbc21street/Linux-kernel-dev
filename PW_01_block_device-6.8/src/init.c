@@ -43,6 +43,10 @@
 #pragma message "-------- Using full geometry capacity"
 #endif // PWBD_USE_GEOMETRY_CAPACITY
 
+#ifdef PWBD_USE_OWN_BLK_OP_NAMES
+#pragma message "-------- Using own routine returning BlkOp names"
+#endif // PWBD_USE_OWN_BLK_OP_NAMES
+
 //
 //
 //

@@ -115,8 +115,6 @@ typedef struct _PWBD_CTRL {
 
     struct block_device_operations DevOps;
 
-    uint32_t TraceLevel;
-
 } PWBD_CTRL, *PPWBD_CTRL;
 
 extern PWBD_CTRL PwbdCtrl;

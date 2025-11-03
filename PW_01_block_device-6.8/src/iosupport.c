@@ -12,6 +12,7 @@
 #include <linux/kernel.h>
 
 #include <linux/blk-mq.h>
+#include <linux/blk_types.h>
 #include <linux/blkdev.h>
 #include <linux/cdrom.h>
 #include <linux/fd.h>
@@ -114,31 +115,35 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, uint32_t DataLen
     return result;
 }
 
+#ifdef PWBD_USE_OWN_BLK_OP_NAMES
+
 //
 //
 //
 
-// static const char *PwbdpGetBlkOpName(blk_opf_t Operation)
-// {
-//     switch (Operation) {
-//         PWBD_BLK_OP_NAME(REQ_OP_READ);
-//         PWBD_BLK_OP_NAME(REQ_OP_WRITE);
-//         PWBD_BLK_OP_NAME(REQ_OP_FLUSH);
-//         PWBD_BLK_OP_NAME(REQ_OP_DISCARD);
-//         PWBD_BLK_OP_NAME(REQ_OP_SECURE_ERASE);
-//         PWBD_BLK_OP_NAME(REQ_OP_ZONE_APPEND);
-//         PWBD_BLK_OP_NAME(REQ_OP_WRITE_ZEROES);
-//         PWBD_BLK_OP_NAME(REQ_OP_ZONE_OPEN);
-//         PWBD_BLK_OP_NAME(REQ_OP_ZONE_CLOSE);
-//         PWBD_BLK_OP_NAME(REQ_OP_ZONE_FINISH);
-//         PWBD_BLK_OP_NAME(REQ_OP_ZONE_RESET);
-//         PWBD_BLK_OP_NAME(REQ_OP_ZONE_RESET_ALL);
-//         PWBD_BLK_OP_NAME(REQ_OP_DRV_IN);
-//         PWBD_BLK_OP_NAME(REQ_OP_DRV_OUT);
-//         default:
-//             return "UNKNOWN_OP";
-//     }
-// }
+const char *PwbdGetBlkOpName(blk_opf_t Operation)
+{
+    switch (Operation) {
+        PWBD_BLK_OP_NAME(REQ_OP_READ);
+        PWBD_BLK_OP_NAME(REQ_OP_WRITE);
+        PWBD_BLK_OP_NAME(REQ_OP_FLUSH);
+        PWBD_BLK_OP_NAME(REQ_OP_DISCARD);
+        PWBD_BLK_OP_NAME(REQ_OP_SECURE_ERASE);
+        PWBD_BLK_OP_NAME(REQ_OP_ZONE_APPEND);
+        PWBD_BLK_OP_NAME(REQ_OP_WRITE_ZEROES);
+        PWBD_BLK_OP_NAME(REQ_OP_ZONE_OPEN);
+        PWBD_BLK_OP_NAME(REQ_OP_ZONE_CLOSE);
+        PWBD_BLK_OP_NAME(REQ_OP_ZONE_FINISH);
+        PWBD_BLK_OP_NAME(REQ_OP_ZONE_RESET);
+        PWBD_BLK_OP_NAME(REQ_OP_ZONE_RESET_ALL);
+        PWBD_BLK_OP_NAME(REQ_OP_DRV_IN);
+        PWBD_BLK_OP_NAME(REQ_OP_DRV_OUT);
+        default:
+            return "UNKNOWN_OP";
+    }
+}
+
+#endif // PWBD_USE_OWN_BLK_OP_NAMES
 
 //
 //

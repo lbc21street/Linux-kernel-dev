@@ -22,6 +22,7 @@
 #include "tracesupport.h"
 
 #include "devicesupport.h"
+#include "iosupport.h"
 #include "queuesupport.h"
 #include "workqueuesupport.h"
 
