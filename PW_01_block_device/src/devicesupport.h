@@ -9,6 +9,7 @@
 
 #include <linux/blk-mq.h>
 #include <linux/device.h>
+#include <linux/hdreg.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
 
@@ -127,6 +128,8 @@ typedef struct _PWBD_DEVICE {
     uint64_t DiskSize; // in bytes
 
     uint32_t DeviceNumber;
+
+    struct hd_geometry Geometry;
 
     sector_t Capacity; // uint64_t, in sectors
 

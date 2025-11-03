@@ -12,6 +12,7 @@
 #include <linux/kernel.h>
 
 #include <linux/blk-mq.h>
+#include <linux/blk_types.h>
 #include <linux/blkdev.h>
 #include <linux/cdrom.h>
 #include <linux/fd.h>
@@ -19,46 +20,67 @@
 #include <linux/preempt.h>
 
 #include "data.h"
-#include "devicesupport.h"
 #include "supportmacros.h"
 
+#define PWBD_COMPONENT_TRACE_MASK PWBD_TM_IO_SUPPORT
+#include "tracesupport.h"
+
+#include "devicesupport.h"
 #include "iosupport.h"
 
 //
 //
 //
 
-static int PwbdpDevOpsGetGeo(struct block_device *Bdev, struct hd_geometry *Geo);
+static int PwbdpCheckDeviceOffsetAndLength(PPWBD_DEVICE Device, loff_t Offset, uint32_t DataLength,
+                                           const char *Operation)
+{
+    if (Offset >= Device->DiskSize) {
+        pr_err_tl(PWBD_TL_1, "[%s] Offset %llu exceeds DiskSize %llu device 0x%px (%u)", Operation,
+                  Offset, Device->DiskSize, Device, Device->DeviceNumber);
+
+        return -EIO;
+    }
+
+    if ((Offset + DataLength) > Device->DiskSize) {
+        pr_err_tl(PWBD_TL_1,
+                  "[%s] (Offset %llu + DataLength %u) (%llu) exceeds device DiskSize %llu device "
+                  "0x%px (%u)",
+                  Operation, Offset, DataLength, Offset + DataLength, Device->DiskSize, Device,
+                  Device->DeviceNumber);
+
+        return -EIO;
+    }
+
+    return 0;
+}
 
 //
 //
 //
 
-static int PwbdpWriteToDevice(PPWBD_DEVICE Device, const void *Data, size_t DataLength,
+static int PwbdpWriteToDevice(PPWBD_DEVICE Device, const void *Data, uint32_t DataLength,
                               sector_t Sector)
 {
     int result = 0;
 
-    pr_info_detailed("Data 0x%px DataLength %lu Sector %llu device 0x%px (%u)", Data, DataLength,
-                     Sector, Device, Device->DeviceNumber);
+    pr_info_tl(PWBD_TL_3, "Data 0x%px DataLength %u Sector %llu device 0x%px (%u)", Data,
+               DataLength, Sector, Device, Device->DeviceNumber);
 
-    uint32_t offset = (Sector & (Device->SectorsPerPage - 1)) << Device->SectorShift;
+    do {
+        loff_t diskOffset = Sector << Device->SectorShift;
 
-    size_t bytesToCopy = min_t(size_t, DataLength, PAGE_SIZE - offset);
+        result = PwbdpCheckDeviceOffsetAndLength(Device, diskOffset, DataLength, "WRITE");
 
-    void *diskData = Add2Ptr(Device->DiskData, Sector << Device->SectorShift);
+        if (result != 0) {
+            break;
+        }
 
-    memcpy(Add2Ptr(diskData, offset), Data, bytesToCopy);
+        void *diskData = Add2Ptr(Device->DiskData, diskOffset);
 
-    if (bytesToCopy < DataLength) {
-        const void *tailData = Add2Ptr(Data, bytesToCopy);
-        sector_t tailSector = Sector + (bytesToCopy >> Device->SectorShift);
-        bytesToCopy = DataLength - bytesToCopy;
+        memcpy(diskData, Data, DataLength);
 
-        diskData = Add2Ptr(Device->DiskData, tailSector << Device->SectorShift);
-
-        memcpy(diskData, tailData, bytesToCopy);
-    }
+    } while (FALSE);
 
     return result;
 }
@@ -67,55 +89,81 @@ static int PwbdpWriteToDevice(PPWBD_DEVICE Device, const void *Data, size_t Data
 //
 //
 
-static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLength, sector_t Sector)
+static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, uint32_t DataLength,
+                               sector_t Sector)
 {
     int result = 0;
 
-    pr_info_detailed("Data 0x%px DataLength %lu Sector %llu device 0x%px (%u)", Data, DataLength,
-                     Sector, Device, Device->DeviceNumber);
+    pr_info_tl(PWBD_TL_3, "Data 0x%px DataLength %u Sector %llu device 0x%px (%u)", Data,
+               DataLength, Sector, Device, Device->DeviceNumber);
 
-    uint32_t offset = (Sector & (Device->SectorsPerPage - 1)) << Device->SectorShift;
+    do {
+        loff_t diskOffset = Sector << Device->SectorShift;
 
-    size_t bytesToCopy = min_t(size_t, DataLength, PAGE_SIZE - offset);
+        result = PwbdpCheckDeviceOffsetAndLength(Device, diskOffset, DataLength, "READ");
 
-    const void *diskData = Add2Ptr(Device->DiskData, Sector << Device->SectorShift);
+        if (result != 0) {
+            break;
+        }
 
-    memcpy(Data, Add2Ptr(diskData, offset), bytesToCopy);
+        const void *diskData = Add2Ptr(Device->DiskData, diskOffset);
 
-    if (bytesToCopy < DataLength) {
-        void *tailData = Add2Ptr(Data, bytesToCopy);
-        sector_t tailSector = Sector + (bytesToCopy >> Device->SectorShift);
-        bytesToCopy = DataLength - bytesToCopy;
+        memcpy(Data, diskData, DataLength);
 
-        diskData = Add2Ptr(Device->DiskData, tailSector << Device->SectorShift);
-
-        memcpy(tailData, diskData, bytesToCopy);
-    }
+    } while (FALSE);
 
     return result;
 }
 
-#ifdef PWBD_USE_MQ
+#ifdef PWBD_USE_OWN_BLK_OP_NAMES
 
 //
 //
 //
 
-[[nodiscard]] static int PwbdpPerformAsyncIo(PPWBD_DEVICE Device, struct page *Page,
-                                             uint32_t Length, uint32_t Offset, blk_opf_t Operation,
-                                             sector_t Sector)
+const char *PwbdGetBlkOpName(blk_opf_t Operation)
+{
+    switch (Operation) {
+        PWBD_BLK_OP_NAME(REQ_OP_READ);
+        PWBD_BLK_OP_NAME(REQ_OP_WRITE);
+        PWBD_BLK_OP_NAME(REQ_OP_FLUSH);
+        PWBD_BLK_OP_NAME(REQ_OP_DISCARD);
+        PWBD_BLK_OP_NAME(REQ_OP_SECURE_ERASE);
+        PWBD_BLK_OP_NAME(REQ_OP_ZONE_APPEND);
+        PWBD_BLK_OP_NAME(REQ_OP_WRITE_ZEROES);
+        PWBD_BLK_OP_NAME(REQ_OP_ZONE_OPEN);
+        PWBD_BLK_OP_NAME(REQ_OP_ZONE_CLOSE);
+        PWBD_BLK_OP_NAME(REQ_OP_ZONE_FINISH);
+        PWBD_BLK_OP_NAME(REQ_OP_ZONE_RESET);
+        PWBD_BLK_OP_NAME(REQ_OP_ZONE_RESET_ALL);
+        PWBD_BLK_OP_NAME(REQ_OP_DRV_IN);
+        PWBD_BLK_OP_NAME(REQ_OP_DRV_OUT);
+        default:
+            return "UNKNOWN_OP";
+    }
+}
+
+#endif // PWBD_USE_OWN_BLK_OP_NAMES
+
+//
+//
+//
+
+[[nodiscard]] static int PwbdpPerformIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length,
+                                        uint32_t Offset, blk_opf_t Operation, sector_t Sector)
 {
     int result = 0;
     void *address;
 
     address = kmap_local_page(Page);
 
-    pr_info_detailed(
-        "Page 0x%px Length %u Offset %u Operation %u Sector %llu address 0x%px device 0x%px "
+    pr_info_tl(
+        PWBD_TL_2,
+        "Page 0x%px Length %u Offset %u Operation <%s> (%u) Sector %llu address 0x%px device 0x%px "
         "(%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
-        Page, Length, Offset, Operation, Sector, address, Device, Device->DeviceNumber,
-        preemptible(), in_atomic(), in_task(), in_serving_softirq(), in_softirq(), in_hardirq(),
-        irqs_disabled());
+        Page, Length, Offset, blk_op_str(Operation), Operation, Sector, address, Device,
+        Device->DeviceNumber, preemptible(), in_atomic(), in_task(), in_serving_softirq(),
+        in_softirq(), in_hardirq(), irqs_disabled());
 
     switch (Operation) {
         case REQ_OP_READ:
@@ -130,19 +178,9 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
             result = PwbdpWriteToDevice(Device, Add2Ptr(address, Offset), Length, Sector);
             break;
 
-        case REQ_OP_FLUSH:
-            pr_info("=> REQ_OP_FLUSH");
-            break;
-
-        case REQ_OP_DISCARD:
-            pr_info("=> REQ_OP_DISCARD");
-            break;
-
-        case REQ_OP_SECURE_ERASE:
-            pr_info("=> REQ_OP_SECURE_ERASE");
-            break;
-
         default:
+            pr_warn_tl(PWBD_TL_2, "=> UNSUPPORTED");
+            result = -ENOTSUPP;
             break;
 
     } // switch (Operation)
@@ -152,6 +190,8 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
     return result;
 }
 
+#ifdef PWBD_USE_MQ
+
 //
 //
 //
@@ -160,6 +200,14 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
 {
     int result = 0;
     PPWBD_DEVICE device = (PPWBD_DEVICE)Request->q->queuedata;
+
+    //
+    // [NOTE]
+    //
+    // the following macro will print a stack trace if it is executed in an atomic context
+    // (spinlock, irq-handler, ...); additional sections where blocking is not allowed can be
+    // annotated with non_block_start() and non_block_end() pairs
+    //
 
     might_sleep();
 
@@ -172,14 +220,14 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
         uint32_t length = bioVec.bv_len;
 
         //
-        // check for unaligned buffer
+        // check for unaligned buffer and buffer length
         //
 
         WARN_ON_ONCE((bioVec.bv_offset & (device->SectorSize - 1)) ||
                      (length & (device->SectorSize - 1)));
 
-        result = PwbdpPerformAsyncIo(device, bioVec.bv_page, length, bioVec.bv_offset,
-                                     req_op(Request), sector);
+        result = PwbdpPerformIo(device, bioVec.bv_page, length, bioVec.bv_offset, req_op(Request),
+                                sector);
 
         if (result != 0) {
             break;
@@ -195,8 +243,7 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
         //
 
         cond_resched();
-
-    } // rq_for_each_segment
+    }
 
     return result;
 }
@@ -207,53 +254,16 @@ static int PwbdpReadFromDevice(PPWBD_DEVICE Device, void *Data, size_t DataLengt
 //
 //
 
-[[nodiscard]] static int PwbdpPerformIo(PPWBD_DEVICE Device, struct page *Page, uint32_t Length,
-                                        uint32_t Offset, blk_opf_t OpFlags, sector_t Sector)
-{
-    int result = 0;
-    void *address;
-
-    address = kmap_local_page(Page);
-
-    pr_info_detailed("Page 0x%px Length %u Offset %u OpFlags 0x%08X sync %u Sector %llu address "
-                     "0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
-                     Page, Length, Offset, OpFlags, op_is_sync(OpFlags), Sector, address, Device,
-                     Device->DeviceNumber, preemptible(), in_atomic(), in_task(),
-                     in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
-
-    if (op_is_write(OpFlags)) {
-        flush_dcache_page(Page);
-
-        result = PwbdpWriteToDevice(Device, Add2Ptr(address, Offset), Length, Sector);
-    }
-
-    else {
-        result = PwbdpReadFromDevice(Device, Add2Ptr(address, Offset), Length, Sector);
-
-        flush_dcache_page(Page);
-    }
-
-    kunmap_local(address);
-
-    return result;
-}
-
-//
-//
-//
-
 static void PwbdpDevOpsSubmitBio(struct bio *Bio)
 {
+    int result = 0;
     PPWBD_DEVICE device = (PPWBD_DEVICE)Bio->bi_bdev->bd_disk->private_data;
-
-    // pr_info_detailed("Bio 0x%px bi_bdev 0x%px bd_disk 0x%px sector %llu device 0x%px (%u)", Bio,
-    //         Bio->bi_bdev, Bio->bi_bdev->bd_disk, sector, device, device->DeviceNumber);
 
     //
     // [NOTE]
     //
     // the following macro will print a stack trace if it is executed in an atomic context
-    // (spinlock, irq - handler, ...). Additional sections where blocking is not allowed can be
+    // (spinlock, irq-handler, ...); additional sections where blocking is not allowed can be
     // annotated with non_block_start() and non_block_end() pairs
     //
 
@@ -264,56 +274,20 @@ static void PwbdpDevOpsSubmitBio(struct bio *Bio)
     sector_t sector = Bio->bi_iter.bi_sector;
     struct bio_vec bioVec;
     struct bvec_iter bvecIter;
-    int result = 0;
-
-    // loff_t deviceSize = device->DiskSize;
-    // loff_t pos = sector << device->SectorShift;
-
-    // bio_for_each_segment(bioVec, Bio, bvecIter)
-    // {
-    //     void *address = page_address(bioVec.bv_page) + bioVec.bv_offset;
-
-    //     if ((pos + length) > deviceSize) {
-    //         Bio->bi_status = BLK_STS_IOERR;
-    //         break;
-    //     }
-
-    //     if (bio_data_dir(Bio)) {
-    //         memcpy(Add2Ptr(device->DiskData, pos), address, length); // write
-    //     }
-
-    //     else {
-    //         memcpy(address, Add2Ptr(device->DiskData, pos), length); // read
-    //     }
-
-    //     pos += length;
-
-    //     //
-    //     // voluntarily yields the CPU from the currently executing task, allowing the scheduler
-    //     to
-    //     // run another task that might be waiting in the CPU's runqueue; prevents CPU hogging and
-    //     // improves responsiveness, plus it's a mechanism of voluntary preemption in
-    //     non-preemptible
-    //     // contexts
-    //     //
-
-    //     cond_resched();
-
-    // } // bio_for_each_segment
 
     bio_for_each_segment(bioVec, Bio, bvecIter)
     {
         uint32_t length = bioVec.bv_len;
 
         //
-        // check for unaligned buffer
+        // check for unaligned buffer and buffer length
         //
 
         WARN_ON_ONCE((bioVec.bv_offset & (device->SectorSize - 1)) ||
                      (length & (device->SectorSize - 1)));
 
         result =
-            PwbdpPerformIo(device, bioVec.bv_page, length, bioVec.bv_offset, Bio->bi_opf, sector);
+            PwbdpPerformIo(device, bioVec.bv_page, length, bioVec.bv_offset, bio_op(Bio), sector);
 
         if (result != 0) {
             break;
@@ -334,21 +308,23 @@ static void PwbdpDevOpsSubmitBio(struct bio *Bio)
 
     bio_end_io_acct(Bio, startTime);
 
-    if (result == 0) {
-        bio_endio(Bio);
+    if (result != 0) {
+        if (FlagOn(Bio->bi_opf, REQ_NOWAIT)) {
+            pr_err_tl(PWBD_TL_1, "calling bio_wouldblock_error() device 0x%px (%u)", device,
+                      device->DeviceNumber);
+
+            bio_wouldblock_error(Bio);
+
+            return;
+        }
     }
 
-    else if (FlagOn(Bio->bi_opf, REQ_NOWAIT)) {
-        pr_err("calling bio_wouldblock_error() device 0x%px (%u)", device, device->DeviceNumber);
+    Bio->bi_status = errno_to_blk_status(result);
 
-        bio_wouldblock_error(Bio);
-    }
+    pr_info_tl(PWBD_TL_3, "completing with %u (%s) device 0x%px (%u)", Bio->bi_status,
+               PwbdGetBlkOpName(Bio->bi_status), device, device->DeviceNumber);
 
-    else {
-        pr_err("calling bio_io_error() device 0x%px (%u)", device, device->DeviceNumber);
-
-        bio_io_error(Bio);
-    }
+    bio_endio(Bio);
 }
 
 #endif // PWBD_USE_MQ
@@ -361,8 +337,8 @@ static int PwbdpDevOpsOpen(struct block_device *Bdev, fmode_t Mode)
 {
     [[maybe_unused]] PPWBD_DEVICE device = (PPWBD_DEVICE)Bdev->bd_disk->private_data;
 
-    pr_info_detailed("Disk 0x%px Mode 0x%08X device 0x%px (%u)", Disk, Mode, device,
-                     device->DeviceNumber);
+    pr_info_tl(PWBD_TL_3, "Bdev 0x%px Mode 0x%08X device 0x%px (%u)", Bdev, Mode, device,
+               device->DeviceNumber);
 
     return 0;
 }
@@ -375,8 +351,49 @@ static void PwbdpDevOpsRelease(struct gendisk *Disk, fmode_t Mode)
 {
     [[maybe_unused]] PPWBD_DEVICE device = (PPWBD_DEVICE)Disk->private_data;
 
-    pr_info("Disk 0x%px openers %u device 0x%px (%u)", Disk, disk_openers(Disk), device,
-            device->DeviceNumber);
+    pr_info_tl(PWBD_TL_3, "Disk 0x%px Mode 0x%08X openers %u device 0x%px (%u)", Disk, Mode,
+               disk_openers(Disk), device, device->DeviceNumber);
+}
+
+//
+//
+//
+
+static int PwbdpDevOpsGetGeo(struct block_device *Bdev, struct hd_geometry *Geometry)
+{
+    PPWBD_DEVICE device = (PPWBD_DEVICE)Bdev->bd_disk->private_data;
+
+    pr_info_tl(PWBD_TL_2, "Bdev 0x%px Geometry 0x%px device 0x%px (%u)", Bdev, Geometry, device,
+               device->DeviceNumber);
+
+    *Geometry = device->Geometry;
+
+    pr_info_tl(PWBD_TL_2, "heads %u cylinders %u sectors %u start %lu device 0x%px (%u)",
+               Geometry->heads, Geometry->cylinders, Geometry->sectors, Geometry->start, device,
+               device->DeviceNumber);
+
+    return 0;
+}
+
+//
+//
+//
+
+static const char *PwbdpGetIoctlName(uint32_t Cmd)
+{
+    switch (Cmd) {
+        PWBD_IOCTL_NAME(FDGETFDCSTAT);
+        PWBD_IOCTL_NAME(HDIO_GETGEO);
+        PWBD_IOCTL_NAME(CDROM_GET_CAPABILITY);
+        PWBD_IOCTL_NAME(CDROM_LAST_WRITTEN);
+        PWBD_IOCTL_NAME(BLKRRPART);
+        PWBD_IOCTL_NAME(BLKGETSIZE);
+        PWBD_IOCTL_NAME(BLKGETSIZE64);
+        PWBD_IOCTL_NAME(BLKSSZGET);
+        PWBD_IOCTL_NAME(BLKPBSZGET);
+        default:
+            return "UNKNOWN_CMD";
+    }
 }
 
 //
@@ -388,24 +405,33 @@ static int PwbdpDevOpsIoctl(struct block_device *Bdev, fmode_t Mode, unsigned Cm
 {
     PPWBD_DEVICE device = (PPWBD_DEVICE)Bdev->bd_disk->private_data;
 
-    pr_info_detailed("Bdev 0x%px Mode 0x%08X Cmd 0x%08X Arg 0x%lX device 0x%px (%u)", Bdev, Mode,
-                     Cmd, Arg, device, device->DeviceNumber);
+    pr_info_tl(PWBD_TL_2, "Bdev 0x%px Mode 0x%08X Cmd <%s> (0x%08X) Arg 0x%lX device 0x%px (%u)",
+               Bdev, Mode, PwbdpGetIoctlName(Cmd), Cmd, Arg, device, device->DeviceNumber);
 
-    int result = 0;
+    //
+    // [NOTE]
+    //
+    // in the Linux kernel, if an IOCTL handler receives an unknown or unsupported command number,
+    // it should return an error code, the recommended error code for this situation is -ENOTTY
+    // (Inappropriate ioctl for device)
+    //
+    // historically, -ENOIOCTLCMD was also used, especially for compat_ioctl handlers in older
+    // kernels, but the current recommendation for a general unsupported operation is -ENOTTY; some
+    // subsystems might also return -EINVAL (Invalid argument) or -ENOSYS (Function not implemented)
+    // for historical reasons, but -ENOTTY is the most appropriate and standard return value for an
+    // unknown or unsupported IOCTL command
+    //
+
+    int result = -ENOTTY;
 
     switch (Cmd) {
-        case FDGETFDCSTAT:
-            pr_info("FDGETFDCSTAT");
-            result = -EINVAL;
-            break;
-
         case HDIO_GETGEO: {
-            pr_info("HDIO_GETGEO");
-
             if (Arg == 0) {
                 result = -EINVAL;
                 break;
             }
+
+            result = 0;
 
             struct hd_geometry geometry = {0};
 
@@ -418,52 +444,28 @@ static int PwbdpDevOpsIoctl(struct block_device *Bdev, fmode_t Mode, unsigned Cm
             break;
         }
 
-        case CDROM_GET_CAPABILITY:
-            pr_info("CDROM_GET_CAPABILITY");
-            result = -EINVAL;
-            break;
-
-        case CDROM_LAST_WRITTEN:
-            pr_info("CDROM_LAST_WRITTEN");
-            result = -EINVAL;
-            break;
-
-        case BLKRRPART:
-            pr_info("BLKRRPART");
-            // result = -EINVAL;
-            break;
-
         case BLKGETSIZE:
-            pr_info("BLKGETSIZE");
-
             result = put_user(device->Capacity,
                               (uint64_t __user *)Arg); // put_ulong(Arg, ctrl->Capacity);
             break;
 
         case BLKGETSIZE64:
-            pr_info("BLKGETSIZE64");
-
             result = put_user(
                 device->DiskSize,
                 (uint64_t __user *)Arg); // put_u64(Arg, ctrl->Capacity << PWBD_SECTOR_SHIFT);
             break;
 
         case BLKSSZGET: // get block device logical block size
-            pr_info("BLKSSZGET");
-
             result =
                 put_user(device->SectorSize, (int __user *)Arg); // put_int(Arg, PWBD_SECTOR_SIZE);
             break;
 
         case BLKPBSZGET: // get block device physical block size
-            pr_info("BLKPBSZGET");
-
             result = put_user(device->SectorSize,
                               (uint32_t __user *)Arg); // put_uint(Arg, PWBD_SECTOR_SIZE);
             break;
 
         default:
-            result = -ENOTTY;
             break;
 
     } // switch (Cmd)
@@ -475,52 +477,12 @@ static int PwbdpDevOpsIoctl(struct block_device *Bdev, fmode_t Mode, unsigned Cm
 //
 //
 
-static int PwbdpDevOpsGetGeo(struct block_device *Bdev, struct hd_geometry *Geo)
-{
-    PPWBD_DEVICE device = (PPWBD_DEVICE)Bdev->bd_disk->private_data;
-
-    pr_info("Bdev 0x%px Geo 0x%px device 0x%px (%u)", Bdev, Geo, device, device->DeviceNumber);
-
-    Geo->start = 0;
-
-    if (device->Capacity > 63) {
-        sector_t quotient;
-
-        Geo->sectors = 63;
-        quotient = (device->Capacity + (63 - 1)) / 63;
-
-        if (quotient > 255) {
-            Geo->heads = 255;
-            Geo->cylinders = (unsigned short)((quotient + (255 - 1)) / 255);
-        }
-
-        else {
-            Geo->heads = (unsigned char)quotient;
-            Geo->cylinders = 1;
-        }
-    }
-
-    else {
-        Geo->sectors = (unsigned char)device->Capacity;
-        Geo->cylinders = 1;
-        Geo->heads = 1;
-    }
-
-    pr_info("heads %u cylinders %u sectors %u start %lu device 0x%px (%u)", Geo->heads,
-            Geo->cylinders, Geo->sectors, Geo->start, device, device->DeviceNumber);
-
-    return 0;
-}
-
-//
-//
-//
-
 static int PwbdpDevOpsSetReadOnly(struct block_device *Bdev, bool Ro)
 {
     PPWBD_DEVICE device = (PPWBD_DEVICE)Bdev->bd_disk->private_data;
 
-    pr_info("Bdev 0x%px Ro %u device 0x%px (%u)", Bdev, Ro, device, device->DeviceNumber);
+    pr_info_tl(PWBD_TL_2, "Bdev 0x%px Ro %u device 0x%px (%u)", Bdev, Ro, device,
+               device->DeviceNumber);
 
     return -EINVAL;
 }
@@ -533,7 +495,7 @@ static void PwbdpDevOpsFreeDisk(struct gendisk *Disk)
 {
     PPWBD_DEVICE device = (PPWBD_DEVICE)Disk->private_data;
 
-    pr_info("Disk 0x%px device 0x%px (%u)", Disk, device, device->DeviceNumber);
+    pr_info_tl(PWBD_TL_3, "Disk 0x%px device 0x%px (%u)", Disk, device, device->DeviceNumber);
 }
 
 //
@@ -544,7 +506,8 @@ static int PwbdpDevOpsGetUniqueId(struct gendisk *Disk, u8 Id[16], enum blk_uniq
 {
     PPWBD_DEVICE device = (PPWBD_DEVICE)Disk->private_data;
 
-    pr_info("Disk 0x%px id_type %u device 0x%px (%u)", Disk, IdType, device, device->DeviceNumber);
+    pr_info_tl(PWBD_TL_2, "Disk 0x%px id_type %u device 0x%px (%u)", Disk, IdType, device,
+               device->DeviceNumber);
 
     return -EINVAL;
 }

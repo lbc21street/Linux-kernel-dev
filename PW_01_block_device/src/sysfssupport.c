@@ -20,6 +20,9 @@
 #include "data.h"
 #include "supportmacros.h"
 
+#define PWBD_COMPONENT_TRACE_MASK PWBD_TM_SYSFS_SUPPORT
+#include "tracesupport.h"
+
 #include "devicesupport.h"
 #include "sysfssupport.h"
 
@@ -69,18 +72,18 @@ const struct device_attribute PwbdDeviceAttributeRemove = {
 {
     int result = 0;
 
-    pr_info("creating class <%s>", PWBD_DEVICE_NAME);
+    pr_info_tl(PWBD_TL_2, "creating class <%s>", PWBD_DEVICE_NAME);
 
     PwbdCtrl.Class = class_create(THIS_MODULE, PWBD_DEVICE_NAME); // 6.8 has only one param
 
     if (!IS_ERR(PwbdCtrl.Class)) {
-        pr_info("created class 0x%px", PwbdCtrl.Class);
+        pr_info_tl(PWBD_TL_1, "created class 0x%px", PwbdCtrl.Class);
     }
 
     else {
         result = PTR_ERR(PwbdCtrl.Class);
 
-        pr_err("class_create() failed %d", result);
+        pr_err_tl(PWBD_TL_1, "class_create() failed %d", result);
     }
 
     return result;
@@ -96,7 +99,7 @@ void PwbdDestroyClass(void)
         return;
     }
 
-    pr_info("destroying class 0x%px", PwbdCtrl.Class);
+    pr_info_tl(PWBD_TL_1, "destroying class 0x%px", PwbdCtrl.Class);
 
     class_destroy(PwbdCtrl.Class);
     PwbdCtrl.Class = NULL;
@@ -110,14 +113,15 @@ void PwbdDestroyClass(void)
 {
     int result = 0;
 
-    pr_info_detailed("creating class device - device 0x%px (%u)", Device, Device->DeviceNumber);
+    pr_info_tl(PWBD_TL_2, "creating class device - device 0x%px (%u)", Device,
+               Device->DeviceNumber);
 
     struct device *classDevice = device_create(PwbdCtrl.Class, NULL, 0, Device, "%s%u",
                                                PWBD_DEVICE_NAME, Device->DeviceNumber);
 
     if (!IS_ERR(classDevice)) {
-        pr_info("created class device 0x%px device 0x%px (%u)", classDevice, Device,
-                Device->DeviceNumber);
+        pr_info_tl(PWBD_TL_1, "created class device 0x%px device 0x%px (%u)", classDevice, Device,
+                   Device->DeviceNumber);
 
         Device->ClassDevice = classDevice;
     }
@@ -125,7 +129,8 @@ void PwbdDestroyClass(void)
     else {
         result = PTR_ERR(classDevice);
 
-        pr_err("device_create() failed %d device 0x%px (%u)", result, Device, Device->DeviceNumber);
+        pr_err_tl(PWBD_TL_1, "device_create() failed %d device 0x%px (%u)", result, Device,
+                  Device->DeviceNumber);
     }
 
     return result;
@@ -141,8 +146,8 @@ void PwbdDestroyClassDevice(PPWBD_DEVICE Device)
         return;
     }
 
-    pr_info("unregistering class device 0x%px device 0x%px (%u)", Device->ClassDevice, Device,
-            Device->DeviceNumber);
+    pr_info_tl(PWBD_TL_1, "unregistering class device 0x%px device 0x%px (%u)", Device->ClassDevice,
+               Device, Device->DeviceNumber);
 
     // device_destroy(PwbdCtrl.Class, 0);
 
@@ -159,11 +164,11 @@ void PwbdDestroyClassDevice(PPWBD_DEVICE Device)
     int result = class_create_file(PwbdCtrl.Class, Attribute);
 
     if (result == 0) {
-        pr_info("created class attribute <%s>", Attribute->attr.name);
+        pr_info_tl(PWBD_TL_1, "created class attribute <%s>", Attribute->attr.name);
     }
 
     else {
-        pr_err("class_create_file() failed %d <%s>", result, Attribute->attr.name);
+        pr_err_tl(PWBD_TL_1, "class_create_file() failed %d <%s>", result, Attribute->attr.name);
     }
 
     return result;
@@ -179,7 +184,7 @@ static void PwbdpRemoveClassAttribute(const struct class_attribute *Attribute)
         return;
     }
 
-    pr_info("removing class attribute <%s>", Attribute->attr.name);
+    pr_info_tl(PWBD_TL_1, "removing class attribute <%s>", Attribute->attr.name);
 
     class_remove_file(PwbdCtrl.Class, Attribute);
 }
@@ -226,7 +231,7 @@ static ssize_t PwbdpClassAttributeAddStore(struct class *Class, struct class_att
     int result = kstrtouint(Buffer, 10, &value);
 
     if (result != 0) {
-        pr_err("kstrtouint() failed %d", result);
+        pr_err_tl(PWBD_TL_1, "kstrtouint() failed %d", result);
 
         return result;
     }
@@ -252,13 +257,13 @@ static ssize_t PwbdpClassAttributeAddStore(struct class *Class, struct class_att
     int result = device_create_file(Device->ClassDevice, Attribute);
 
     if (result == 0) {
-        pr_info("created device attribute <%s> device 0x%px (%u)", Attribute->attr.name, Device,
-                Device->DeviceNumber);
+        pr_info_tl(PWBD_TL_1, "created device attribute <%s> device 0x%px (%u)",
+                   Attribute->attr.name, Device, Device->DeviceNumber);
     }
 
     else {
-        pr_err("device_create_file() failed %d <%s> device 0x%px (%u)", result,
-               Attribute->attr.name, Device, Device->DeviceNumber);
+        pr_err_tl(PWBD_TL_1, "device_create_file() failed %d <%s> device 0x%px (%u)", result,
+                  Attribute->attr.name, Device, Device->DeviceNumber);
     }
 
     return result;
@@ -275,8 +280,8 @@ static void PwbdpRemoveDeviceAttribute(PPWBD_DEVICE Device,
         return;
     }
 
-    pr_info("removing device attribute <%s> device 0x%px (%u)", Attribute->attr.name, Device,
-            Device->DeviceNumber);
+    pr_info_tl(PWBD_TL_1, "removing device attribute <%s> device 0x%px (%u)", Attribute->attr.name,
+               Device, Device->DeviceNumber);
 
     device_remove_file(Device->ClassDevice, Attribute);
 }
@@ -324,7 +329,7 @@ static ssize_t PwbdpDeviceAttributeRemoveStore(struct device *Device,
     int result = kstrtouint(Buffer, 10, &value);
 
     if (result != 0) {
-        pr_err("kstrtouint() failed %d", result);
+        pr_err_tl(PWBD_TL_1, "kstrtouint() failed %d", result);
 
         return result;
     }
@@ -341,7 +346,7 @@ static ssize_t PwbdpDeviceAttributeRemoveStore(struct device *Device,
     //
 
     if (FlagOn(PwbdCtrl.Flags, PWBD_CTLFL_TEARING_DOWN)) {
-        pr_warn("driver is already being torn down");
+        pr_warn_tl(PWBD_TL_1, "driver is already being torn down");
 
         return -ENODEV;
     }

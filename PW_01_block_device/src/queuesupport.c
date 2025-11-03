@@ -18,7 +18,11 @@
 #include "data.h"
 #include "supportmacros.h"
 
+#define PWBD_COMPONENT_TRACE_MASK PWBD_TM_QUEUE_SUPPORT
+#include "tracesupport.h"
+
 #include "devicesupport.h"
+#include "iosupport.h"
 #include "queuesupport.h"
 #include "workqueuesupport.h"
 
@@ -42,13 +46,13 @@
     if (result == 0) {
         SetFlag(Device->Flags, PWBD_DEVFL_TAG_SET_ALLOCATED);
 
-        pr_info("allocated tag set @ 0x%px, queue_depth %u device 0x%px (%u)", &Device->TagSet,
-                Device->TagSet.queue_depth, Device, Device->DeviceNumber);
+        pr_info_tl(PWBD_TL_1, "allocated tag set @ 0x%px, queue_depth %u device 0x%px (%u)",
+                   &Device->TagSet, Device->TagSet.queue_depth, Device, Device->DeviceNumber);
     }
 
     else {
-        pr_err("blk_mq_alloc_tag_set() failed %d device 0x%px (%u)", result, Device,
-               Device->DeviceNumber);
+        pr_err_tl(PWBD_TL_1, "blk_mq_alloc_tag_set() failed %d device 0x%px (%u)", result, Device,
+                  Device->DeviceNumber);
     }
 
     return result;
@@ -64,8 +68,8 @@ void PwbdpFreeTagSet(PPWBD_DEVICE Device)
         return;
     }
 
-    pr_info("freeing tag set @ 0x%px device 0x%px (%u)", &Device->TagSet, Device,
-            Device->DeviceNumber);
+    pr_info_tl(PWBD_TL_1, "freeing tag set @ 0x%px device 0x%px (%u)", &Device->TagSet, Device,
+               Device->DeviceNumber);
 
     blk_mq_free_tag_set(&Device->TagSet);
     ClearFlag(Device->Flags, PWBD_DEVFL_TAG_SET_ALLOCATED);
@@ -94,11 +98,12 @@ static blk_status_t PwbdpQueueRequest(struct blk_mq_hw_ctx *Context,
 
     [[maybe_unused]] unsigned long length = blk_rq_cur_bytes(request);
 
-    pr_info_detailed("Context 0x%px Data 0x%px request 0x%px sync %u start 0x%lX length %lu device "
-                     "0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
-                     Context, Data, request, rq_is_sync(request), start, length, device,
-                     device->DeviceNumber, preemptible(), in_atomic(), in_task(),
-                     in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
+    pr_info_tl(PWBD_TL_3,
+               "Context 0x%px Data 0x%px request 0x%px sync %u start 0x%lX length %lu device "
+               "0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
+               Context, Data, request, rq_is_sync(request), start, length, device,
+               device->DeviceNumber, preemptible(), in_atomic(), in_task(), in_serving_softirq(),
+               in_softirq(), in_hardirq(), irqs_disabled());
 
     blk_mq_start_request(request);
 
@@ -118,13 +123,17 @@ static void PwbdpCompleteRequest(struct request *Request)
     [[maybe_unused]] PPWBD_DEVICE device = Request->q->queuedata;
     PPWBD_REQUEST_DATA data = blk_mq_rq_to_pdu(Request);
 
-    pr_info_detailed("Request 0x%px data 0x%px Result %d device 0x%px (%u) [P %u A %u T %u SS %lu "
-                     "S %lu H %lu I %u]",
-                     Request, data, data->Result, device, device->DeviceNumber, preemptible(),
-                     in_atomic(), in_task(), in_serving_softirq(), in_softirq(), in_hardirq(),
-                     irqs_disabled());
+    pr_info_tl(PWBD_TL_3,
+               "Request 0x%px data 0x%px Result %d device 0x%px (%u) [P %u A %u T %u SS %lu "
+               "S %lu H %lu I %u]",
+               Request, data, data->Result, device, device->DeviceNumber, preemptible(),
+               in_atomic(), in_task(), in_serving_softirq(), in_softirq(), in_hardirq(),
+               irqs_disabled());
 
     blk_status_t status = errno_to_blk_status(data->Result);
+
+    pr_info_tl(PWBD_TL_3, "completing with %u (%s) device 0x%px (%u)", status,
+               PwbdGetBlkOpName(status), device, device->DeviceNumber);
 
     blk_mq_end_request(Request, status);
 }
@@ -139,9 +148,10 @@ static enum blk_eh_timer_return PwbdpTimeout(struct request *Request)
 {
     PPWBD_DEVICE device = Request->q->queuedata;
 
-    pr_info("Request 0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]", Request,
-            device, device->DeviceNumber, preemptible(), in_atomic(), in_task(),
-            in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
+    pr_info_tl(PWBD_TL_2,
+               "Request 0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]", Request,
+               device, device->DeviceNumber, preemptible(), in_atomic(), in_task(),
+               in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
 
     return BLK_EH_DONE;
 }
@@ -152,8 +162,9 @@ static enum blk_eh_timer_return PwbdpTimeout(struct request *Request)
 
 static int PwbdpInitHctx(struct blk_mq_hw_ctx *Context, void *Data, unsigned int HctxIndex)
 {
-    pr_info("Data 0x%px [P %u A %u T %u SS %lu S %lu H %lu I %u]", Data, preemptible(), in_atomic(),
-            in_task(), in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
+    pr_info_tl(PWBD_TL_3, "Data 0x%px [P %u A %u T %u SS %lu S %lu H %lu I %u]", Data,
+               preemptible(), in_atomic(), in_task(), in_serving_softirq(), in_softirq(),
+               in_hardirq(), irqs_disabled());
 
     return 0;
 }
@@ -164,8 +175,8 @@ static int PwbdpInitHctx(struct blk_mq_hw_ctx *Context, void *Data, unsigned int
 
 static void PwbdpExitHctx(struct blk_mq_hw_ctx *Context, unsigned int HctxIndex)
 {
-    pr_info("[P %u A %u T %u SS %lu S %lu H %lu I %u]", preemptible(), in_atomic(), in_task(),
-            in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
+    pr_info_tl(PWBD_TL_3, "[P %u A %u T %u SS %lu S %lu H %lu I %u]", preemptible(), in_atomic(),
+               in_task(), in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
 }
 
 //
@@ -177,9 +188,10 @@ static void PwbdpExitHctx(struct blk_mq_hw_ctx *Context, unsigned int HctxIndex)
 // {
 //     PPWBD_DEVICE device = Request->q->queuedata;
 
-//     pr_info("Request 0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]", Request,
-//             device, device->DeviceNumber, preemptible(), in_atomic(), in_task(),
-//             in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
+//     pr_info_tl(PWBD_TL_3,
+//                "Request 0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
+//                Request, device, device->DeviceNumber, preemptible(), in_atomic(), in_task(),
+//                in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
 
 //     return 0;
 // }
@@ -193,9 +205,10 @@ static void PwbdpExitHctx(struct blk_mq_hw_ctx *Context, unsigned int HctxIndex)
 // {
 //     PPWBD_DEVICE device = Request->q->queuedata;
 
-//     pr_info("Request 0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]", Request,
-//             device, device->DeviceNumber, preemptible(), in_atomic(), in_task(),
-//             in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
+//     pr_info_tl(PWBD_TL_3,
+//                "Request 0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
+//                Request, device, device->DeviceNumber, preemptible(), in_atomic(), in_task(),
+//                in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
 // }
 
 //
@@ -206,9 +219,10 @@ static void PwbdpCleanupRequest(struct request *Request)
 {
     PPWBD_DEVICE device = Request->q->queuedata;
 
-    pr_info("Request 0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]", Request,
-            device, device->DeviceNumber, preemptible(), in_atomic(), in_task(),
-            in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
+    pr_info_tl(PWBD_TL_3,
+               "Request 0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]", Request,
+               device, device->DeviceNumber, preemptible(), in_atomic(), in_task(),
+               in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
 }
 
 #endif // PWBD_MQ_DIAG

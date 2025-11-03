@@ -17,6 +17,9 @@
 #include "data.h"
 #include "supportmacros.h"
 
+#define PWBD_COMPONENT_TRACE_MASK PWBD_TM_INIT
+#include "tracesupport.h"
+
 #include "devicesupport.h"
 #include "paramsupport.h"
 #include "sysfssupport.h"
@@ -25,10 +28,6 @@
 //
 //
 //
-
-#ifdef PWBD_DETAILED_TRACE
-#pragma message "-------- Detailed trace"
-#endif // PWBD_DETAILED_TRACE
 
 #ifdef PWBD_USE_MQ
 #pragma message "-------- Using MQ"
@@ -39,6 +38,14 @@
 #ifdef PWBD_MQ_DIAG
 #pragma message "-------- MQ diag stuff"
 #endif // PWBD_USE_MQ
+
+#ifdef PWBD_USE_GEOMETRY_CAPACITY
+#pragma message "-------- Using full geometry capacity"
+#endif // PWBD_USE_GEOMETRY_CAPACITY
+
+#ifdef PWBD_USE_OWN_BLK_OP_NAMES
+#pragma message "-------- Using own routine returning BlkOp names"
+#endif // PWBD_USE_OWN_BLK_OP_NAMES
 
 //
 //
@@ -62,11 +69,12 @@ static void PwbdpCaptureDeviceParameters(void)
     PwbdCtrl.NumberOfDevices = devicecount;
     PwbdCtrl.NumberOfPartitions = partitioncount;
     PwbdCtrl.SectorSize = sectorsize;
-    PwbdCtrl.DiskSize = MB_TO_BYTES(disksize + PWBD_RESERVED_DISK_SIZE_MB);
+    PwbdCtrl.DiskSize = MB_TO_BYTES(disksize);
 
-    pr_info("captured NumberOfDevices %u NumberOfPartitions %u SectorSize %u DiskSize %llu",
-            PwbdCtrl.NumberOfDevices, PwbdCtrl.NumberOfPartitions, PwbdCtrl.SectorSize,
-            PwbdCtrl.DiskSize);
+    pr_info_tl(PWBD_TL_1,
+               "captured NumberOfDevices %u NumberOfPartitions %u SectorSize %u DiskSize %llu",
+               PwbdCtrl.NumberOfDevices, PwbdCtrl.NumberOfPartitions, PwbdCtrl.SectorSize,
+               PwbdCtrl.DiskSize);
 }
 
 //
@@ -92,7 +100,7 @@ static int __init PwbdInit(void)
 {
     int result = 0;
 
-    pr_info("entering");
+    pr_info_tl(PWBD_TL_1, "entering...");
 
     do {
         //
@@ -127,11 +135,15 @@ static int __init PwbdInit(void)
 
     } while (FALSE);
 
-    if (result != 0) {
-        PwbdpTeardown();
+    if (result == 0) {
+        pr_info_tl(PWBD_TL_1, "leaving...");
     }
 
-    pr_info("leaving, result %d", result);
+    else {
+        PwbdpTeardown();
+
+        pr_err_tl(PWBD_TL_1, "leaving, result %d", result);
+    }
 
     return result;
 }
@@ -142,11 +154,11 @@ static int __init PwbdInit(void)
 
 static void __exit PwbdExit(void)
 {
-    pr_info("entering");
+    pr_info_tl(PWBD_TL_1, "entering...");
 
     PwbdpTeardown();
 
-    pr_info("leaving");
+    pr_info_tl(PWBD_TL_1, "leaving...");
 }
 
 //

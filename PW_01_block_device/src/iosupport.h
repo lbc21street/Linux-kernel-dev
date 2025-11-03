@@ -16,6 +16,24 @@ extern "C" {
 //
 //
 
+#define PWBD_IOCTL_NAME(cmd)                                                                       \
+    case cmd:                                                                                      \
+        return #cmd
+
+#ifdef PWBD_USE_OWN_BLK_OP_NAMES
+#define PWBD_BLK_OP_NAME(op)                                                                       \
+    case op:                                                                                       \
+        return #op
+#endif // PWBD_USE_OWN_BLK_OP_NAMES
+
+//
+//
+//
+
+#ifdef PWBD_USE_OWN_BLK_OP_NAMES
+const char *PwbdGetBlkOpName(blk_opf_t Operation);
+#endif // PWBD_USE_OWN_BLK_OP_NAMES
+
 [[nodiscard]] int PwbdProcessAsyncRequest(struct request *Request);
 
 //

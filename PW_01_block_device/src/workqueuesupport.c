@@ -18,6 +18,9 @@
 #include "data.h"
 #include "supportmacros.h"
 
+#define PWBD_COMPONENT_TRACE_MASK PWBD_TM_WORKQUEUE_SUPPORT
+#include "tracesupport.h"
+
 #include "devicesupport.h"
 #include "iosupport.h"
 #include "workqueuesupport.h"
@@ -46,16 +49,17 @@
 
     int maxActive = 0;
 
-    PwbdCtrl.DeviceRemovalWorkQueue = alloc_workqueue("DeviceRemoval", flags, maxActive);
+    PwbdCtrl.DeviceRemovalWorkQueue = alloc_workqueue("PwbdDeviceRemoval", flags, maxActive);
 
     if (PwbdCtrl.DeviceRemovalWorkQueue != NULL) {
-        pr_info("allocated device removal work queue 0x%px (flags 0x%08X maxActive %u)",
-                PwbdCtrl.DeviceRemovalWorkQueue, flags, maxActive);
+        pr_info_tl(PWBD_TL_1,
+                   "allocated device removal work queue 0x%px (flags 0x%08X maxActive %u)",
+                   PwbdCtrl.DeviceRemovalWorkQueue, flags, maxActive);
 
         return 0;
     }
 
-    pr_err("alloc_workqueue() failed");
+    pr_err_tl(PWBD_TL_1, "alloc_workqueue() failed");
 
     return -ENOMEM;
 }
@@ -70,11 +74,13 @@ void PwbdDestroyDeviceRemovalWorkQueue(void)
         return;
     }
 
-    pr_info("draining device removal work queue 0x%px", PwbdCtrl.DeviceRemovalWorkQueue);
+    pr_info_tl(PWBD_TL_1, "draining device removal work queue 0x%px",
+               PwbdCtrl.DeviceRemovalWorkQueue);
 
     drain_workqueue(PwbdCtrl.DeviceRemovalWorkQueue);
 
-    pr_info("destroying device removal work queue 0x%px", PwbdCtrl.DeviceRemovalWorkQueue);
+    pr_info_tl(PWBD_TL_1, "destroying device removal work queue 0x%px",
+               PwbdCtrl.DeviceRemovalWorkQueue);
 
     destroy_workqueue(PwbdCtrl.DeviceRemovalWorkQueue);
     PwbdCtrl.DeviceRemovalWorkQueue = NULL;
@@ -114,13 +120,15 @@ void PwbdDestroyDeviceRemovalWorkQueue(void)
         alloc_workqueue("%s%u", flags, maxActive, PWBD_DEVICE_NAME, Device->DeviceNumber);
 
     if (Device->WorkQueue != NULL) {
-        pr_info("allocated work queue 0x%px (flags 0x%08X maxActive %u) device 0x%px (%u)",
-                Device->WorkQueue, flags, maxActive, Device, Device->DeviceNumber);
+        pr_info_tl(PWBD_TL_1,
+                   "allocated work queue 0x%px (flags 0x%08X maxActive %u) device 0x%px (%u)",
+                   Device->WorkQueue, flags, maxActive, Device, Device->DeviceNumber);
 
         return 0;
     }
 
-    pr_err("alloc_workqueue() failed device 0x%px (%u)", Device, Device->DeviceNumber);
+    pr_err_tl(PWBD_TL_1, "alloc_workqueue() failed device 0x%px (%u)", Device,
+              Device->DeviceNumber);
 
     return -ENOMEM;
 }
@@ -148,14 +156,14 @@ void PwbdDestroyDeviceWorkQueue(PPWBD_DEVICE Device)
     // shutdown or module unloading
     //
 
-    pr_info("draining work queue 0x%px device 0x%px (%u)", Device->WorkQueue, Device,
-            Device->DeviceNumber);
+    pr_info_tl(PWBD_TL_1, "draining work queue 0x%px device 0x%px (%u)", Device->WorkQueue, Device,
+               Device->DeviceNumber);
 
     drain_workqueue(Device->WorkQueue);
     // flush_workqueue(Device->WorkQueue);
 
-    pr_info("destroying work queue 0x%px device 0x%px (%u)", Device->WorkQueue, Device,
-            Device->DeviceNumber);
+    pr_info_tl(PWBD_TL_1, "destroying work queue 0x%px device 0x%px (%u)", Device->WorkQueue,
+               Device, Device->DeviceNumber);
 
     destroy_workqueue(Device->WorkQueue);
     Device->WorkQueue = NULL;
@@ -171,9 +179,10 @@ static void PwbdpAsyncRequestWorkerRoutine(struct work_struct *WorkItem)
     struct request *request = blk_mq_rq_from_pdu(data);
     [[maybe_unused]] PPWBD_DEVICE device = (PPWBD_DEVICE)request->q->queuedata;
 
-    pr_info_detailed("request 0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]",
-                     request, device, device->DeviceNumber, preemptible(), in_atomic(), in_task(),
-                     in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
+    pr_info_tl(PWBD_TL_3,
+               "request 0x%px device 0x%px (%u) [P %u A %u T %u SS %lu S %lu H %lu I %u]", request,
+               device, device->DeviceNumber, preemptible(), in_atomic(), in_task(),
+               in_serving_softirq(), in_softirq(), in_hardirq(), irqs_disabled());
 
     data->Result = PwbdProcessAsyncRequest(request);
 
