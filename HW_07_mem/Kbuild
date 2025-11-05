@@ -1,0 +1,8 @@
+MODNAME := memtest
+# modules to be built
+obj-m := ${MODNAME}.o
+
+# object files for a module
+${MODNAME}-objs := src/init.o src/memtest.o src/paramsupport.o
+
+# CFLAGS_MODULE += -DSOME_DEFINE
