@@ -3,6 +3,7 @@
 ## Тест kmalloc
 
 ```powershell
+# sudo insmod memtest.ko testmode=1
 [  182.665819] [memtest] MtpSetMemoryTestMode(): got test mode 1
 [  182.665968] [memtest] MtInit(): entering...
 [  182.665969] [memtest] MtTestMemory(): => total RAM pages: 1686043 (6906032128 bytes)
@@ -19,6 +20,8 @@
 [  182.759138] [memtest] MtpTestKmalloc(): [kmalloc] 1023 - 4194304 bytes (1024 page(s)) [contiguous] spent 0 ms => SUCCESS
 [  182.759164] [memtest] MtpTestKmalloc(): [kmalloc] 1024 - 4198400 bytes (1025 page(s)) spent 0 ms => FAILURE
 [  182.759170] [memtest] MtInit(): leaving...
+
+# sudo rmmod memtest
 [  187.364497] [memtest] MtExit(): entering...
 [  187.364501] [memtest] MtExit(): leaving...
 ```
@@ -26,6 +29,7 @@
 ## Тест vmalloc
 
 ```powershell
+# sudo insmod memtest.ko testmode=2
 [  189.014591] [memtest] MtpSetMemoryTestMode(): got test mode 2
 [  189.014739] [memtest] MtInit(): entering...
 [  189.014741] [memtest] MtTestMemory(): => total RAM pages: 1686043 (6906032128 bytes)
@@ -67,6 +71,8 @@
 [  197.634462] [memtest] MtpTestVmalloc(): [vmalloc] 35 - 5637144576 bytes (1376256 page(s)) [non-contiguous] spent 568 ms => SUCCESS
 [  198.522881] [memtest] MtpTestVmalloc(): [vmalloc] 36 - 5905580032 bytes (1441792 page(s)) spent 732 ms => FAILURE
 [  198.522892] [memtest] MtInit(): leaving...
+
+# sudo rmmod memtest
 [  200.172807] [memtest] MtExit(): entering...
 [  200.172816] [memtest] MtExit(): leaving...
 ```
@@ -74,6 +80,7 @@
 ## Тест kmem_cache
 
 ```powershell
+# sudo insmod memtest.ko testmode=3
 [  202.815788] [memtest] MtpSetMemoryTestMode(): got test mode 3
 [  202.816135] [memtest] MtInit(): entering...
 [  202.816138] [memtest] MtTestMemory(): => total RAM pages: 1686043 (6906032128 bytes)
@@ -102,6 +109,8 @@
 [  204.257629] [memtest] MtpTestKmemCache(): [kmem_cache] 1256497 - 5146615808 bytes (1256498 page(s)) spent 0 ms => FAILURE
 [  205.287149] [memtest] MtpTestKmemCache(): destroying kmem_cache <TestKmemCache> 0xffff888123497a40
 [  205.642348] [memtest] MtInit(): leaving...
+
+# sudo rmmod memtest
 [  208.703096] [memtest] MtExit(): entering...
 [  208.703100] [memtest] MtExit(): leaving...
 ```
@@ -111,6 +120,7 @@
 Небольшое пояснение. В отличие от тестов **vmalloc** и **kmem_cache**, в данном тесте флаг **\_\_GFP_NORETRY** не сработал. Пришлось ограничить количество выделяемой памяти в данном тесте. На ядре **6.1.130** это четверть от **\_totalrampages**, на ядре **6.8.0-40-generic** система нормально переживает три четверти от **\_totalrampages**.
 
 ```powershell
+# sudo insmod memtest.ko testmode=4
 [  210.666395] [memtest] MtpSetMemoryTestMode(): got test mode 4
 [  210.666558] [memtest] MtInit(): entering...
 [  210.666560] [memtest] MtTestMemory(): => total RAM pages: 1686043 (6906032128 bytes)
@@ -137,6 +147,8 @@
 [  211.069511] [memtest] MtpTestMempool(): [mempool] 262143 - 1073741824 bytes (262144 page(s)) [non-contiguous] spent 0 ms => SUCCESS
 [  211.669293] [memtest] MtpTestMempool(): destroying mempool 0xffff8881010bd500
 [  211.670294] [memtest] MtInit(): leaving...
+
+# sudo rmmod memtest
 [  215.834186] [memtest] MtExit(): entering...
 [  215.834194] [memtest] MtExit(): leaving...
 ```
@@ -144,6 +156,7 @@
 ## Тест \_\_get_free_pages
 
 ```powershell
+# sudo insmod memtest.ko testmode=5
 [  218.251881] [memtest] MtpSetMemoryTestMode(): got test mode 5
 [  218.252211] [memtest] MtInit(): entering...
 [  218.252215] [memtest] MtTestMemory(): => total RAM pages: 1686043 (6906032128 bytes)
@@ -160,6 +173,8 @@
 [  218.253184] [memtest] MtpTestGetFreePages(): [__get_free_pages] 10 - 4194304 bytes (1024 page(s)) [contiguous] spent 4 ms => SUCCESS
 [  218.253233] [memtest] MtpTestGetFreePages(): [__get_free_pages] 11 - 8388608 bytes (2048 page(s)) spent 0 ms => FAILURE
 [  218.253253] [memtest] MtInit(): leaving...
+
+# sudo rmmod memtest
 [  219.734026] [memtest] MtExit(): entering...
 [  219.734030] [memtest] MtExit(): leaving...
 ```
@@ -167,6 +182,7 @@
 ## Тест alloc_pages
 
 ```powershell
+# sudo insmod memtest.ko testmode=6
 [  221.941760] [memtest] MtpSetMemoryTestMode(): got test mode 6
 [  221.941923] [memtest] MtInit(): entering...
 [  221.941924] [memtest] MtTestMemory(): => total RAM pages: 1686043 (6906032128 bytes)
@@ -183,6 +199,8 @@
 [  221.942619] [memtest] MtpTestAllocPages(): [alloc_pages] 10 - 4194304 bytes (1024 page(s)) [contiguous] spent 0 ms => SUCCESS
 [  221.942652] [memtest] MtpTestAllocPages(): [alloc_pages] 11 - 8388608 bytes (2048 page(s)) spent 0 ms => FAILURE
 [  221.942657] [memtest] MtInit(): leaving...
+
+# sudo rmmod memtest
 [  223.860513] [memtest] MtExit(): entering...
 [  223.860533] [memtest] MtExit(): leaving...
 ```
