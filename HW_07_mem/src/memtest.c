@@ -62,7 +62,7 @@ static const char *MtPhysicalPagesStatusNames[MT_PHPS_MAX_STATUS] = {"n/a", "con
 //
 //
 
-static const char *MtpGetPhysPagesStatusName(MT_PHISICAL_PAGES_STATUS Status)
+static const char *MtpGetPhysPagesStatusName(MT_PHYSICAL_PAGES_STATUS Status)
 {
     if (Status < MT_PHPS_MAX_STATUS) {
         return MtPhysicalPagesStatusNames[Status];
@@ -116,7 +116,7 @@ static phys_addr_t MtpGetPhysicalAddress(const void *Address)
 //
 //
 
-static MT_PHISICAL_PAGES_STATUS MtpCheckPhysicalPagesContiguous(const void *StartVa, size_t Size)
+static MT_PHYSICAL_PAGES_STATUS MtpCheckPhysicalPagesContiguous(const void *StartVa, size_t Size)
 {
     uint32_t pages = MT_NUMBER_OF_PAGES(StartVa, Size);
 
@@ -148,7 +148,7 @@ static MT_PHISICAL_PAGES_STATUS MtpCheckPhysicalPagesContiguous(const void *Star
     return MT_PHPS_CONTIGUOUS;
 }
 
-static MT_PHISICAL_PAGES_STATUS
+static MT_PHYSICAL_PAGES_STATUS
 MtpCheckPhysicalPagesContiguousFromList(const struct list_head *List)
 {
     if (list_is_singular(List)) {
@@ -211,7 +211,7 @@ static int MtpTestKmalloc(const char *AllocatorName)
         }
 
         if (is_power_of_2(bytesToAllocate)) {
-            MT_PHISICAL_PAGES_STATUS status =
+            MT_PHYSICAL_PAGES_STATUS status =
                 MtpCheckPhysicalPagesContiguous(buffer, bytesToAllocate);
 
             // clang-format off
@@ -264,7 +264,7 @@ static int MtpTestVmalloc(const char *AllocatorName)
             break;
         }
 
-        MT_PHISICAL_PAGES_STATUS status = MtpCheckPhysicalPagesContiguous(buffer, bytesToAllocate);
+        MT_PHYSICAL_PAGES_STATUS status = MtpCheckPhysicalPagesContiguous(buffer, bytesToAllocate);
 
         // clang-format off
         pr_info("[%s] %u - %lu bytes (%u page(s)) [%s] spent %u ms => SUCCESS",
@@ -354,7 +354,7 @@ static int MtpTestKmemCache(const char *AllocatorName)
             list_add(&block->Links, &blockList);
 
             if (is_power_of_2(pages)) {
-                MT_PHISICAL_PAGES_STATUS status =
+                MT_PHYSICAL_PAGES_STATUS status =
                     MtpCheckPhysicalPagesContiguousFromList(&blockList);
 
                 // clang-format off
@@ -455,7 +455,7 @@ static int MtpTestMempool(const char *AllocatorName)
             list_add(&block->Links, &blockList);
 
             if (is_power_of_2(pages)) {
-                MT_PHISICAL_PAGES_STATUS status =
+                MT_PHYSICAL_PAGES_STATUS status =
                     MtpCheckPhysicalPagesContiguousFromList(&blockList);
 
                 // clang-format off
@@ -530,7 +530,7 @@ static int MtpTestGetFreePages(const char *AllocatorName)
         }
 
         if (is_power_of_2(bytesToAllocate)) {
-            MT_PHISICAL_PAGES_STATUS status =
+            MT_PHYSICAL_PAGES_STATUS status =
                 MtpCheckPhysicalPagesContiguous((void *)buffer, bytesToAllocate);
 
             // clang-format off
@@ -596,7 +596,7 @@ static int MtpTestAllocPages(const char *AllocatorName)
         }
 
         if (is_power_of_2(bytesToAllocate)) {
-            MT_PHISICAL_PAGES_STATUS status =
+            MT_PHYSICAL_PAGES_STATUS status =
                 MtpCheckPhysicalPagesContiguous((void *)buffer, bytesToAllocate);
 
             // clang-format off
