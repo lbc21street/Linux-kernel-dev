@@ -70,8 +70,8 @@ static inline uint32_t TtpGetElapsedTime(uintptr_t StartTime, uintptr_t EndTime)
 
 static inline void TtpInitTimerData(PTT_TIMER_DATA Data)
 {
-    raw_atomic_set(&Data->Counter, 0);
-    raw_atomic_set(&Data->StopFlag, 0);
+    atomic_set(&Data->Counter, 0);
+    atomic_set(&Data->StopFlag, 0);
     Data->StartTime = TtpGetCurrentTime();
     Data->StopTime = TtpCalculateExpirationTime(TT_WORKING_TIME);
 }
@@ -93,7 +93,7 @@ static void TtpTimerCallback(struct timer_list *Timer)
 {
     PTT_TIMER_DATA data = from_timer(data, Timer, Timer);
 
-    uint32_t counter = raw_atomic_fetch_add(1, &data->Counter);
+    uint32_t counter = atomic_fetch_add(1, &data->Counter);
 
     do {
 
@@ -101,7 +101,7 @@ static void TtpTimerCallback(struct timer_list *Timer)
         uint32_t elapsedTime = TtpGetElapsedTime(data->StartTime, currentTime);
         uint32_t elapsedSinceLastCall = TtpGetElapsedTime(data->TimerSetupTime, currentTime);
 
-        if (raw_atomic_read(&data->StopFlag)) {
+        if (atomic_read(&data->StopFlag)) {
             // clang-format off
             pr_warn("[%u] stop flag set - quitting timer, current time %lu stop time %lu elapsed %u ms (%u ms)",
                 counter,
@@ -188,7 +188,7 @@ static void TtpTeardownTimer(void)
     if (FlagOn(TtCtrl.Flags, TT_CTLFL_TIMER_SET)) {
         pr_info("setting stop flag...");
 
-        raw_atomic_or(1, &TtCtrl.TimerData->StopFlag);
+        atomic_or(1, &TtCtrl.TimerData->StopFlag);
 
         pr_info("cancelling timer...");
 
