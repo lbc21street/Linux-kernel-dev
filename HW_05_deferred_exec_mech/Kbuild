@@ -1,0 +1,8 @@
+MODNAME := defexec
+# modules to be built
+obj-m := ${MODNAME}.o
+
+# object files for a module
+${MODNAME}-objs := src/defexec.o
+
+# CFLAGS_MODULE += -DSOME_DEFINE
