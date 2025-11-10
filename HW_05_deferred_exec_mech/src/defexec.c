@@ -258,7 +258,7 @@ static void DexpTeardownWorkData(void)
 
     int result = wake_up(&DexCtrl.WorkData->WaitQueueList);
 
-    pr_info("woken up worker (result %d)", result);
+    pr_info("woke up worker (result %d)", result);
 
     pr_info("cancelling WorkItem 0x%px (busy %u)", &DexCtrl.WorkData->WorkItem,
             work_busy(&DexCtrl.WorkData->WorkItem));
