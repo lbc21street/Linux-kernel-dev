@@ -1,0 +1,11 @@
+# modules to be built
+obj-m := ex_list.o ex_queue.o ex_rb_tree.o
+
+# object files for a module
+ex_list-objs := src/ex_list.o
+
+# object files for a module
+ex_queue-objs := src/ex_queue.o
+
+# object files for a module
+ex_rb_tree-objs := src/ex_rb_tree.o
