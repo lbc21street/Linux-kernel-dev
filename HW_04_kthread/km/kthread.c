@@ -8,6 +8,7 @@
 
 #define pr_fmt(fmt) "[" KBUILD_MODNAME "] %s(): " fmt "\n", __func__
 
+#include <linux/delay.h>
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -18,8 +19,10 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
+#include <data.h>
+#include <supportmacros.h>
+
 #include "kthread.h"
-#include "supportmacros.h"
 
 //
 // global data
@@ -34,7 +37,8 @@ KTH_CTRL KthCtrl;
 static int KthpWriterWorkerThread(void *Data)
 {
     struct task_struct *thread = current;
-    uint32_t increment = KTH_PTR_UINT(Data);
+    uint32_t increment = PTR_UINT(Data);
+    uint32_t iterations = 0;
 
     pr_info("entering worker 0x%px", thread);
 
@@ -45,26 +49,19 @@ static int KthpWriterWorkerThread(void *Data)
             break;
         }
 
-        down_write(&KthCtrl.Lock);
+        XTH_WORKER_ACTION action = XthWriteData(&KthCtrl.Data, increment);
 
-        if (KthCtrl.WriterCycles == KTH_MAX_CYCLES) {
-            up_write(&KthCtrl.Lock);
-
+        if (action == XthWorkerActionStop) {
             pr_info("writer worker 0x%px completed", thread);
 
             break;
         }
 
-        ++KthCtrl.WriterCycles;
-
-        KthCtrl.Data += increment;
-        ++KthCtrl.DataWritten;
-
-        up_write(&KthCtrl.Lock);
+        ++iterations;
 
     } // while (TRUE)
 
-    pr_info("leaving worker 0x%px", thread);
+    pr_info("leaving worker 0x%px - iterations %u", thread, iterations);
 
     return 0;
 }
@@ -76,6 +73,7 @@ static int KthpWriterWorkerThread(void *Data)
 static int KthpReaderWorkerThread(void *Data)
 {
     struct task_struct *thread = current;
+    uint32_t iterations = 0;
 
     pr_info("entering worker 0x%px", thread);
 
@@ -86,38 +84,63 @@ static int KthpReaderWorkerThread(void *Data)
             break;
         }
 
-        down_read(&KthCtrl.Lock);
+        XTH_WORKER_ACTION action = XthReadData(&KthCtrl.Data);
 
-        if (KthCtrl.ReaderCycles >= KTH_MAX_CYCLES) {
-            up_read(&KthCtrl.Lock);
-
+        if (action == XthWorkerActionStop) {
             pr_info("reader worker 0x%px completed", thread);
 
             break;
         }
 
-        if (KthCtrl.DataWritten) {
-            uint32_t c = 0;
+        if (action == XthWorkerActionBackOff) {
+            schedule_timeout_idle(1);
 
-            while (c < KthCtrl.DataWritten) {
-                KthCtrl.Data = 0;
-
-                ++KthCtrl.ReaderCycles;
-
-                ++c;
-
-            } // while (c < KthCtrl.DataWritten)
-
-            KthCtrl.DataWritten = 0;
+            ++KthCtrl.Data.Backoffs;
         }
 
-        up_read(&KthCtrl.Lock);
+        ++iterations;
 
     } // while (TRUE)
 
-    pr_info("leaving worker 0x%px", thread);
+    pr_info("leaving worker 0x%px - iterations %u MaxDataWritten %u Backoffs %u", thread,
+            iterations, KthCtrl.Data.MaxDataWritten, KthCtrl.Data.Backoffs);
 
     return 0;
+}
+
+//
+//
+//
+
+static int KthpCreateWriterWorkerThreads(void)
+{
+    int result = 0;
+    uint32_t c = 0;
+
+    while (c < ARRAY_SIZE(KthCtrl.WriterWorkers)) {
+        void *data = UINT_PTR((c + 1) * 10);
+
+        struct task_struct *thread =
+            kthread_create(KthpWriterWorkerThread, data, "KthWriterThread%u", c);
+
+        if (!IS_ERR(thread)) {
+            get_task_struct(thread);
+            KthCtrl.WriterWorkers[c] = thread;
+
+            pr_info("created writer worker 0x%px (%u)", thread, c);
+        }
+
+        else {
+            result = PTR_ERR(thread);
+
+            pr_err("kthread_create() failed %d (%u)", result, c);
+        }
+
+        ++c;
+
+    } // while (c < ARRAY_SIZE(KthCtrl.WriterWorkers))
+
+    return result;
 }
 
 //
@@ -150,35 +173,37 @@ static int KthpCreateReaderWorkerThread(void)
 //
 //
 
-static int KthpCreateWriterWorkerThreads(void)
+static void KthpResumeWriterWorkerThreads(void)
 {
-    int result = 0;
+    int result;
     uint32_t c = 0;
 
     while (c < ARRAY_SIZE(KthCtrl.WriterWorkers)) {
-        void *data = KTH_UINT_PTR((c + 1) * 10);
+        pr_info("waking up writer worker 0x%px (%u)", KthCtrl.WriterWorkers[c], c);
 
-        struct task_struct *thread =
-            kthread_create(KthpWriterWorkerThread, data, "KthWriterThread%u", c);
+        result = wake_up_process(KthCtrl.WriterWorkers[c]);
 
-        if (!IS_ERR(thread)) {
-            get_task_struct(thread);
-            KthCtrl.WriterWorkers[c] = thread;
-
-            pr_info("created writer worker 0x%px (%u)", thread, c);
-        }
-
-        else {
-            result = PTR_ERR(thread);
-
-            pr_err("kthread_create() failed %d (%u)", result, c);
-        }
+        pr_info("woke up writer worker 0x%px (%u) (result %d)", KthCtrl.WriterWorkers[c], c,
+                result);
 
         ++c;
 
     } // while (c < ARRAY_SIZE(KthCtrl.WriterWorkers))
+}
 
-    return result;
+//
+//
+//
+
+static void KthpResumeReaderWorkerThread(void)
+{
+    int result;
+
+    pr_info("waking up reader worker 0x%px", KthCtrl.ReaderWorker);
+
+    result = wake_up_process(KthCtrl.ReaderWorker);
+
+    pr_info("woke up reader worker 0x%px (result %d)", KthCtrl.ReaderWorker, result);
 }
 
 //
@@ -190,7 +215,7 @@ static int KthpSetupWorkerThreads(void)
     int result = 0;
 
     do {
-        init_rwsem(&KthCtrl.Lock);
+        init_rwsem(&KthCtrl.Data.Lock);
 
         result = KthpCreateWriterWorkerThreads();
 
@@ -204,24 +229,9 @@ static int KthpSetupWorkerThreads(void)
             break;
         }
 
-        pr_info("waking up reader worker 0x%px", KthCtrl.ReaderWorker);
+        KthpResumeWriterWorkerThreads();
 
-        wake_up_process(KthCtrl.ReaderWorker);
-
-        pr_info("woke up reader worker 0x%px", KthCtrl.ReaderWorker);
-
-        uint32_t c = 0;
-
-        while (c < ARRAY_SIZE(KthCtrl.WriterWorkers)) {
-            pr_info("waking up writer worker 0x%px (%u)", KthCtrl.WriterWorkers[c], c);
-
-            wake_up_process(KthCtrl.WriterWorkers[c]);
-
-            pr_info("woke up writer worker 0x%px (%u)", KthCtrl.WriterWorkers[c], c);
-
-            ++c;
-
-        } // while (c < ARRAY_SIZE(KthCtrl.WriterWorkers))
+        KthpResumeReaderWorkerThread();
 
     } while (FALSE);
 
@@ -235,40 +245,29 @@ static int KthpSetupWorkerThreads(void)
 static void KthpTeardownWorkerThreads(void)
 {
     int result;
-
-    if (KthCtrl.ReaderWorker != NULL) {
-        pr_info("stopping reader worker 0x%px", KthCtrl.ReaderWorker);
-
-        //
-        // sets kthread_should_stop() for the given thread to return true, wakes it, and waits for
-        // it to exit; this can also be called after kthread_create() instead of calling
-        // wake_up_process(): the thread will exit without calling threadfn()
-        //
-        // if threadfn() may call kthread_exit() itself, the caller must ensure task_struct can't go
-        // away
-        //
-        // returns the result of threadfn(), or -EINTR if wake_up_process() was never called
-        //
-
-        //
-        // we use kthread_stop_put() because our worker thread routines can exit itself
-        //
-        // stops a thread created by kthread_create() and put its task_struct; only use when holding
-        // an extra task struct reference obtained by calling get_task_struct()
-        //
-
-        result = kthread_stop_put(KthCtrl.ReaderWorker);
-
-        pr_info("reader worker 0x%px stopped (result %d)", KthCtrl.ReaderWorker, result);
-
-        KthCtrl.ReaderWorker = NULL;
-    }
-
     uint32_t c = 0;
 
     while (c < ARRAY_SIZE(KthCtrl.WriterWorkers)) {
         if (KthCtrl.WriterWorkers[c] != NULL) {
             pr_info("stopping writer worker 0x%px (%u)", KthCtrl.WriterWorkers[c], c);
+
+            //
+            // sets kthread_should_stop() for the given thread to return true, wakes it, and waits
+            // for it to exit; this can also be called after kthread_create() instead of calling
+            // wake_up_process(): the thread will exit without calling threadfn()
+            //
+            // if threadfn() may call kthread_exit() itself, the caller must ensure task_struct
+            // can't go away
+            //
+            // returns the result of threadfn(), or -EINTR if wake_up_process() was never called
+            //
+
+            //
+            // we use kthread_stop_put() because our worker thread routines can exit itself
+            //
+            // stops a thread created by kthread_create() and put its task_struct; only use when
+            // holding an extra task struct reference obtained by calling get_task_struct()
+            //
 
             result = kthread_stop_put(KthCtrl.WriterWorkers[c]);
 
@@ -281,6 +280,16 @@ static void KthpTeardownWorkerThreads(void)
         ++c;
 
     } // while (c < ARRAY_SIZE(KthCtrl.WriterWorkers))
+
+    if (KthCtrl.ReaderWorker != NULL) {
+        pr_info("stopping reader worker 0x%px", KthCtrl.ReaderWorker);
+
+        result = kthread_stop_put(KthCtrl.ReaderWorker);
+
+        pr_info("reader worker 0x%px stopped (result %d)", KthCtrl.ReaderWorker, result);
+
+        KthCtrl.ReaderWorker = NULL;
+    }
 }
 
 //

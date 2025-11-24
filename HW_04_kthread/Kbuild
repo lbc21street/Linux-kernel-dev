@@ -5,4 +5,6 @@ obj-m := ${MODNAME}.o
 # object files for a module
 ${MODNAME}-objs := km/kthread.o
 
+ccflags-y += -I$(PWD)/inc
+
 # CFLAGS_MODULE += -DSOME_DEFINE
