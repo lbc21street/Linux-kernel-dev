@@ -11,6 +11,7 @@
 #include <linux/kthread.h>
 #include <linux/rwsem.h>
 #include <linux/sched.h>
+#include <linux/sched/task.h>
 #include <linux/types.h>
 
 #include <data.h>
@@ -18,6 +19,19 @@
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+//
+// [NOTE]
+//
+// it's absent in kernel 6.1.130, but defined as a macro for usb drivers
+//
+
+#define kthread_stop_put(k)                                                                        \
+    ({                                                                                             \
+        int ret = kthread_stop(k);                                                                 \
+        put_task_struct(k);                                                                        \
+        ret;                                                                                       \
+    })
 
 //
 //
